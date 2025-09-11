@@ -208,27 +208,30 @@ def detect_language(text):
 def is_valid_answer(text, min_words=3):
     """Проверка валидности ответа"""
     if not text or text.strip() == "":
-        return False
+        return False, "empty"
     
     words = text.strip().split()
     if len(words) < min_words:
-        return False
+        return False, "too_short"
     
     # Проверка на бессмысленные ответы
     meaningless_patterns = [
-        r'^[a-z\s]*$',  # только английские буквы
         r'^\d+$',       # только цифры
         r'^[.,!?;:\s]*$',  # только знаки препинания
         r'^(.)\1{10,}',    # повторяющиеся символы
-        r'asdf|qwerty|123|test|тест|проверка',  # стандартные тестовые строки
+        r'asdf|qwerty|123|test|тест|проверка|xnj',  # стандартные тестовые строки
     ]
     
     text_lower = text.lower()
     for pattern in meaningless_patterns:
         if re.search(pattern, text_lower):
-            return False
+            return False, "meaningless"
     
-    return True
+    # Проверка на слишком короткие ответы (менее 10 символов)
+    if len(text.strip()) < 10:
+        return False, "too_short_chars"
+    
+    return True, "valid"
 
 def get_navigation_keyboard(current_question, user_lang):
     """Создание клавиатуры с навигацией"""
@@ -287,14 +290,31 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     user_lang = context.user_data.get('language', 'ru')
     
     # Проверяем валидность ответа ПЕРЕД определением языка
-    if not is_valid_answer(answer):
-        invalid_messages = {
-            'ru': "❌ Пожалуйста, дайте более развёрнутый ответ (минимум 3 слова). Постарайтесь ответить честно и подробно.",
-            'he': "❌ אנא תנו תשובה מפורטת יותר (מינימום 3 מילים). נסו לענות בכנות ובפירוט.",
-            'en': "❌ Please provide a more detailed answer (minimum 3 words). Try to answer honestly and in detail."
+    is_valid, error_type = is_valid_answer(answer)
+    if not is_valid:
+        error_messages = {
+            'ru': {
+                'too_short': "❌ Пожалуйста, дайте более развёрнутый ответ (минимум 3 слова).\n\n💡 Пример хорошего ответа: \"Я считаю себя целеустремленным человеком, который всегда доводит дела до конца\"",
+                'too_short_chars': "❌ Ответ слишком короткий. Напишите минимум 10 символов.\n\n💡 Постарайтесь раскрыть свои мысли подробнее",
+                'meaningless': "❌ Пожалуйста, дайте осмысленный ответ.\n\n💡 Опишите свои мысли, чувства или опыт по данному вопросу",
+                'empty': "❌ Вы не написали ответ. Пожалуйста, ответьте на вопрос."
+            },
+            'he': {
+                'too_short': "❌ אנא תנו תשובה מפורטת יותר (מינימום 3 מילים).\n\n💡 דוגמה לתשובה טובה: \"אני רואה את עצמי כאדם נחוש שתמיד מביא דברים לסיום\"",
+                'too_short_chars': "❌ התשובה קצרה מדי. כתבו לפחות 10 תווים.\n\n💡 נסו לפרט את המחשבות שלכם יותר",
+                'meaningless': "❌ אנא תנו תשובה משמעותית.\n\n💡 תארו את המחשבות, הרגשות או הניסיון שלכם בנושא זה",
+                'empty': "❌ לא כתבתם תשובה. אנא ענו על השאלה."
+            },
+            'en': {
+                'too_short': "❌ Please provide a more detailed answer (minimum 3 words).\n\n💡 Example of good answer: \"I consider myself a determined person who always sees things through\"",
+                'too_short_chars': "❌ Answer is too short. Write at least 10 characters.\n\n💡 Try to elaborate on your thoughts more",
+                'meaningless': "❌ Please provide a meaningful answer.\n\n💡 Describe your thoughts, feelings or experience on this topic",
+                'empty': "❌ You didn't write an answer. Please respond to the question."
+            }
         }
+        
         await update.message.reply_text(
-            invalid_messages[user_lang],
+            error_messages[user_lang].get(error_type, error_messages[user_lang]['too_short']),
             reply_markup=get_navigation_keyboard(state, user_lang)
         )
         return state  # Остаемся на том же вопросе
