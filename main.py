@@ -526,50 +526,65 @@ def get_navigation_keyboard(current_question, user_lang):
 async def think_and_respond(user_message, user_lang='ru'):
     """Функция для 'размышления' бота через GPT"""
     thinking_prompts = {
-        'ru': f"""Ты карьерный психоаналитик и HR-профориентолог. Пользователь написал: "{user_message}"
+        'ru': f"""Ты комбинированный эксперт: психоаналитик (Фрейд, Юнг) + HR-профориентолог + MBTI-консультант + Big Five специалист. Пользователь написал: "{user_message}"
 
-Проанализируй его сообщение и дай умный, эмпатичный ответ как профессиональный карьерный консультант:
-- Если это вопрос о возможностях - объясни что ты умеешь (анализ личности + карьерные рекомендации)
-- Если это просто приветствие - поприветствуй и предложи анализ карьеры
-- Если это личный вопрос - дай краткий психологический совет с карьерным контекстом
-- Если рассказывают сны/переживания - проанализируй с точки зрения карьерных мотивов
-- Если просят помощь - предложи экспресс-анализ или полный опрос
-- Всегда отвечай на русском языке
-- Будь теплым, профессиональным и мотивирующим
-- Подчеркивай ценность результата (подходящие профессии, карьерные пути)
-- Ответ должен быть 1-3 предложения
+ТВОИ ДВЕ ГЛАВНЫЕ ЦЕЛИ:
+1. ГЛУБОКИЙ ПСИХОАНАЛИЗ: Фрейд (подсознание, защиты), Юнг (архетипы, тени), Big Five (OCEAN), MBTI типология
+2. HR-ПРОФОРИЕНТАЦИЯ: подходящие профессии, карьерные пути, рекомендации для найма
 
-Ответь ТОЛЬКО текстом ответа, без дополнительных комментариев.""",
+Проанализируй сообщение используя ВСЕ методики:
+- ФРЕЙД: скрытые мотивы, детские паттерны, защитные механизмы
+- ЮНГОВСКИЕ архетипы: какой архетип проявляется? (Мудрец, Герой, Творец, и т.д.)
+- MBTI-индикаторы: экстраверсия/интроверсия, мышление/чувства
+- BIG FIVE черты: открытость, сознательность, экстраверсия, дружелюбие, нейротизм
+- HR-ПОТЕНЦИАЛ: лидерские качества, командная работа, стрессоустойчивость
+
+ЗАДАВАЙ вопросы для определения:
+- Психотипа и архетипа
+- Карьерных предпочтений
+- Профессиональных мотивов
+
+Ответ: 2-3 предложения + вопрос (как психоаналитик + HR-консультант)""",
         
-        'he': f"""אתה פסיכואנליטיקאי קריירה ויועץ HR. המשתמש כתב: "{user_message}"
+        'he': f"""אתה מומחה משולב: פסיכואנליטיקאי (פרויד, יונג) + יועץ HR + יועץ MBTI + מומחה Big Five. המשתמש כתב: "{user_message}"
 
-נתח את ההודעה שלו ותן תשובה חכמה ואמפטית כיועץ קריירה מקצועי:
-- אם זה שאלה על יכולות - הסבר מה אתה יודע לעשות (ניתוח אישיות + המלצות קריירה)
-- אם זה רק ברכה - בירך והצע ניתוח קריירה
-- אם זה שאלה אישית - תן עצה פסיכולוגית קצרה עם הקשר קריירה
-- אם מספרים חלומות/חוויות - נתח מנקודת מבט של מניעי קריירה
-- אם מבקשים עזרה - הצע ניתוח מהיר או סקר מלא
-- תמיד תשב בעברית
-- היה חם, מקצועי ומעורר השראה
-- הדגש את הערך של התוצאה (מקצועות מתאימים, נתיבי קריירה)
-- התשובה צריכה להיות 1-3 משפטים
+שתי המטרות הראשיות שלך:
+1. ניתוח פסיכולוגי עמוק: פרויד (תת-הכרה, הגנות), יונג (ארכיטיפים, צללים), Big Five (OCEAN), טיפולוגיית MBTI
+2. הכוונה מקצועית HR: מקצועות מתאימים, נתיבי קריירה, המלצות לגיוס
 
-תשב רק בטקסט התשובה, בלי הערות נוספות.""",
+נתח את ההודעה באמצעות כל השיטות:
+- פרויד: מניעים נסתרים, דפוסי ילדות, מנגנוני הגנה
+- ארכיטיפים יונגיאניים: איזה ארכיטיפ מתבטא? (חכם, גיבור, יוצר, וכו')
+- אינדיקטורי MBTI: אקסטרוברטיות/אינטרוברטיות, חשיבה/רגשות
+- תכונות Big Five: פתיחות, מצפוניות, אקסטרוברטיות, נעימות, נוירוטיות
+- פוטנציאל HR: תכונות מנהיגות, עבודת צוות, עמידות בלחץ
+
+שאל שאלות לקביעת:
+- פסיכוטיפ וארכיטיפ
+- העדפות קריירה
+- מניעים מקצועיים
+
+תשובה: 2-3 משפטים + שאלה (כפסיכואנליטיקאי + יועץ HR)""",
         
-        'en': f"""You are a career psychoanalyst and HR consultant. The user wrote: "{user_message}"
+        'en': f"""You are a combined expert: psychoanalyst (Freud, Jung) + HR career consultant + MBTI specialist + Big Five expert. The user wrote: "{user_message}"
 
-Analyze their message and give a smart, empathetic response as a professional career consultant:
-- If it's a question about capabilities - explain what you can do (personality analysis + career recommendations)
-- If it's just a greeting - greet and suggest career analysis
-- If it's a personal question - give brief psychological advice with career context
-- If they tell dreams/experiences - analyze from career motivation perspective
-- If asking for help - suggest express analysis or full survey
-- Always respond in English
-- Be warm, professional and motivating
-- Emphasize the value of results (suitable professions, career paths)
-- Response should be 1-3 sentences
+YOUR TWO MAIN GOALS:
+1. DEEP PSYCHOLOGICAL ANALYSIS: Freud (unconscious, defenses), Jung (archetypes, shadows), Big Five (OCEAN), MBTI typology
+2. HR CAREER GUIDANCE: suitable professions, career paths, hiring recommendations
 
-Respond ONLY with the answer text, no additional comments."""
+Analyze the message using ALL methodologies:
+- FREUD: hidden motives, childhood patterns, defense mechanisms
+- JUNGIAN archetypes: which archetype manifests? (Sage, Hero, Creator, etc.)
+- MBTI indicators: extraversion/introversion, thinking/feeling
+- BIG FIVE traits: openness, conscientiousness, extraversion, agreeableness, neuroticism
+- HR POTENTIAL: leadership qualities, teamwork, stress resistance
+
+ASK questions to determine:
+- Psychotype and archetype
+- Career preferences
+- Professional motivations
+
+Response: 2-3 sentences + question (as psychoanalyst + HR consultant)"""
     }
     
     # Защита от неизвестных языков
@@ -605,38 +620,39 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data['language'] = user_lang
     
     # Собираем историю диалога для экспресс-анализа
-    if 'conversation_history' not in context.user_data:
-        context.user_data['conversation_history'] = []
-    
-    # Добавляем сообщение в историю (максимум 10 последних)
-    context.user_data['conversation_history'].append(user_message)
-    if len(context.user_data['conversation_history']) > 10:
-        context.user_data['conversation_history'] = context.user_data['conversation_history'][-10:]
-    
-    # Также сохраняем в глобальную переменную для экспресс-анализа
     if user.id not in conversation_history:
         conversation_history[user.id] = []
+    
     conversation_history[user.id].append(user_message)
+    # Ограничиваем историю (максимум 10 сообщений для экономии токенов)
     if len(conversation_history[user.id]) > 10:
         conversation_history[user.id] = conversation_history[user.id][-10:]
     
+    message_count = len(conversation_history[user.id])
+    
+    # АВТОЗАВЕРШЕНИЕ: После 6 сообщений → принудительный анализ
+    if message_count >= 6:
+        analysis_start_texts = {
+            'ru': "🎯 **Отлично! У меня достаточно материала для анализа.**\n\n🔄 *Анализирую ваши сообщения и составляю психологический портрет...*",
+            'he': "🎯 **מעולה! יש לי מספיק חומר לניתוח.**\n\n🔄 *מנתח את ההודעות שלכם ומכין פרופיל פסיכולוגי...*",
+            'en': "🎯 **Excellent! I have enough material for analysis.**\n\n🔄 *Analyzing your messages and creating psychological profile...*"
+        }
+        
+        await update.message.reply_text(
+            analysis_start_texts[user_lang], 
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        # Запускаем анализ и завершаем диалог
+        await process_express_analysis(update, context)
+        return
+    
     # Проверяем, ждем ли мы данные для экспресс-анализа
     if context.user_data.get('waiting_for_express_data', False):
-        # Если накопилось достаточно данных, делаем экспресс-анализ
-        if len(context.user_data['conversation_history']) >= 1:
-            context.user_data['waiting_for_express_data'] = False
-            await update.message.reply_text("🔄 Анализирую ваши сообщения...")
-            await process_express_analysis(update, context)
-            return
-        else:
-            # Просим еще рассказать более профессионально
-            messages = {
-                'ru': "Интересно! Расскажите еще что-то о себе - что вас мотивирует, какие у вас цели, или поделитесь любыми мыслями...",
-                'he': "מעניין! ספרו עוד משהו על עצמכם - מה מניע אתכם, אילו מטרות יש לכם, או שתפו כל מחשבה...",
-                'en': "Interesting! Tell me more about yourself - what motivates you, what goals you have, or share any thoughts..."
-            }
-            await update.message.reply_text(messages[user_lang])
-            return
+        context.user_data['waiting_for_express_data'] = False
+        await update.message.reply_text("🔄 Анализирую ваши сообщения...")
+        await process_express_analysis(update, context)
+        return
     
     # Показываем "думает..."
     thinking_messages = {
@@ -657,6 +673,46 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
     # Удаляем "думает" и отправляем ответ
     await thinking_msg.delete()
     await update.message.reply_text(smart_response)
+    
+    # ПРОМЕЖУТОЧНЫЕ ПРЕДЛОЖЕНИЯ
+    if message_count == 3:
+        transition_texts = {
+            'ru': f"💭 **Вижу, вы готовы к более глубокому анализу!**\n\nВыберите формат:",
+            'he': f"💭 **אני רואה שאתם מוכנים לניתוח עמוק יותר!**\n\nבחרו פורמט:",
+            'en': f"💭 **I see you're ready for deeper analysis!**\n\nChoose format:"
+        }
+        
+        keyboard = [
+            [InlineKeyboardButton("⚡ Экспресс-анализ сейчас", callback_data='express_analysis')],
+            [InlineKeyboardButton("💬 Еще поговорить", callback_data='continue_chat')],
+            [InlineKeyboardButton("📋 Полный тест", callback_data='full_test')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            transition_texts[user_lang],
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
+    elif message_count == 5:
+        warning_texts = {
+            'ru': "🔔 **Еще одно сообщение и я начну анализ!**\n\nИли выберите действие:",
+            'he': "🔔 **עוד הודעה אחת ואתחיל ניתוח!**\n\nאו בחרו פעולה:",
+            'en': "🔔 **One more message and I'll start analysis!**\n\nOr choose action:"
+        }
+        
+        keyboard = [
+            [InlineKeyboardButton("⚡ Анализ сейчас", callback_data='express_analysis')],
+            [InlineKeyboardButton("📋 Полный тест", callback_data='full_test')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            warning_texts[user_lang],
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда помощи"""
@@ -790,6 +846,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     
     return Q1
+
+async def continue_chat_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка кнопки 'Еще поговорить'"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_lang = context.user_data.get('language', 'ru')
+    
+    continue_messages = {
+        'ru': "💬 **Отлично! Продолжаем общение.**\n\nРасскажите еще что-то интересное о себе - ваши мечты, страхи, планы или просто мысли...",
+        'he': "💬 **מעולה! ממשיכים לשוחח.**\n\nספרו עוד משהו מעניין על עצמכם - חלומות, פחדים, תוכניות או סתם מחשבות...",
+        'en': "💬 **Great! Let's continue chatting.**\n\nTell me something more interesting about yourself - your dreams, fears, plans or just thoughts..."
+    }
+    
+    await query.edit_message_text(
+        continue_messages[user_lang],
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 async def express_analysis_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Экспресс-анализ из диалога"""
@@ -952,74 +1026,107 @@ Any information will help me understand your psychotype!"""
     conversation_text = " ".join(conversation_data)
     
     express_prompts = {
-        'ru': f"""Ты карьерный психоаналитик и HR-профориентолог с 20-летним опытом. Проанализируй диалог с пользователем и дай краткий, но ценный карьерный анализ.
+        'ru': f"""Ты комбинированный эксперт: психоаналитик (Фрейд, Юнг) + HR-специалист + MBTI-консультант + Big Five эксперт. Проанализируй диалог и дай профессиональную оценку.
 
 ДИАЛОГ ПОЛЬЗОВАТЕЛЯ:
 {conversation_text}
 
-ВАЖНО: Даже если информации мало, используй психоаналитические методы для глубокого анализа. Каждое слово может раскрыть личность!
+ТВОИ ДВЕ ГЛАВНЫЕ ЦЕЛИ:
+1. ГЛУБОКИЙ ПСИХОАНАЛИЗ: Определи психотип, архетип, защитные механизмы
+2. HR-ОЦЕНКА: Профессиональный потенциал, подходящие роли, рекомендации для найма
 
-Проведи экспресс-анализ:
-1. Определи основные черты личности (OCEAN: открытость, добросовестность, экстраверсия, доброжелательность, нейротизм)
-2. Выяви карьерные мотивы и интересы
-3. Проанализируй сны/переживания на предмет карьерных инсайтов
-4. Предложи 2-3 подходящие профессии
-5. Дай краткую стратегию развития
+Проведи МУЛЬТИУРОВНЕВЫЙ анализ:
 
-ФОРМАТ ОТВЕТА:
+🧠 ПСИХОЛОГИЧЕСКИЙ ПРОФИЛЬ:
+- ФРЕЙД: структура личности (Ид/Эго/Суперэго), защитные механизмы
+- ЮНГ: доминирующий архетип (Мудрец, Герой, Творец, Правитель, и т.д.)
+- MBTI: предположительный тип (4 буквы с объяснением)
+- BIG FIVE: оценка по OCEAN (1-10 баллов каждый)
+
+💼 HR-ОЦЕНКА:
+- Лидерский потенциал (1-10)
+- Командная работа (1-10) 
+- Стрессоустойчивость (1-10)
+- Подходящие профессии (3 конкретные с психологическим обоснованием)
+- Рекомендация для HR: РЕКОМЕНДОВАН / УСЛОВНО / НЕ РЕКОМЕНДОВАН
+
+ФОРМАТ:
 🎯 ЭКСПРЕСС-ПРОФИЛЬ:
-• Тип личности: [краткое описание на основе анализа]
-• Карьерные мотивы: [основные драйверы]
-• Подходящие профессии: [2-3 профессии с обоснованием]
-• Стратегия развития: [краткие рекомендации]
+🧠 Психотип: [MBTI] - [архетип] 
+📊 Big Five: O[X] C[X] E[X] A[X] N[X]
+💼 HR-оценки: Лидерство [X/10], Команда [X/10], Стресс [X/10]
+🎯 Профессии: [3 конкретные с обоснованием]
+✅ Рекомендация: [РЕКОМЕНДОВАН/УСЛОВНО/НЕ РЕКОМЕНДОВАН] + причина
 
-Будь конкретным, мотивирующим и профессиональным! Даже из минимума информации извлеки максимум инсайтов.""",
+Анализируй как профессиональный психолог + HR-эксперт!""",
         
-        'he': f"""אתה פסיכואנליטיקאי קריירה ויועץ HR עם 20 שנות ניסיון. נתח את השיחה עם המשתמש ותן ניתוח קריירה קצר אבל בעל ערך.
+        'he': f"""אתה מומחה משולב: פסיכואנליטיקאי (פרויד, יונג) + מומחה HR + יועץ MBTI + מומחה Big Five. נתח את השיחה ותן הערכה מקצועית.
 
 השיחה של המשתמש:
 {conversation_text}
 
-חשוב: גם אם יש מעט מידע, השתמש בשיטות פסיכואנליטיות לניתוח עמוק. כל מילה יכולה לחשוף את האישיות!
+שתי המטרות הראשיות שלך:
+1. ניתוח פסיכולוגי עמוק: קבע פסיכוטיפ, ארכיטיפ, מנגנוני הגנה
+2. הערכת HR: פוטנציאל מקצועי, תפקידים מתאימים, המלצות לגיוס
 
-בצע ניתוח מהיר:
-1. קבע תכונות אישיות עיקריות (OCEAN: פתיחות, מצפוניות, אקסטרוורסיה, נעימות, נוירוטיות)
-2. זהה מניעי קריירה ותחומי עניין
-3. נתח חלומות/חוויות לזיהוי תובנות קריירה
-4. הצע 2-3 מקצועות מתאימים
-5. תן אסטרטגיית פיתוח קצרה
+בצע ניתוח רב-שכבתי:
 
-פורמט תשובה:
+🧠 פרופיל פסיכולוגי:
+- פרויד: מבנה אישיות (אידיד/אגו/סופר-אגו), מנגנוני הגנה
+- יונג: ארכיטיפ דומיננטי (חכם, גיבור, יוצר, שליט, וכו')
+- MBTI: טיפוס משוער (4 אותיות עם הסבר)
+- Big Five: הערכה לפי OCEAN (ציונים 1-10 לכל אחד)
+
+💼 הערכת HR:
+- פוטנציאל מנהיגותי (1-10)
+- עבודת צוות (1-10)
+- עמידות בלחץ (1-10)
+- מקצועות מתאימים (3 קונקרטיים עם הנמקה פסיכולוגית)
+- המלצה ל-HR: מומלץ / בתנאי / לא מומלץ
+
+פורמט:
 🎯 פרופיל מהיר:
-• סוג אישיות: [תיאור קצר על בסיס הניתוח]
-• מניעי קריירה: [מניעים עיקריים]
-• מקצועות מתאימים: [2-3 מקצועות עם הנמקה]
-• אסטרטגיית פיתוח: [המלצות קצרות]
+🧠 פסיכוטיפ: [MBTI] - [ארכיטיפ]
+📊 Big Five: O[X] C[X] E[X] A[X] N[X]
+💼 הערכות HR: מנהיגות [X/10], צוות [X/10], לחץ [X/10]
+🎯 מקצועות: [3 קונקרטיים עם הנמקה]
+✅ המלצה: [מומלץ/בתנאי/לא מומלץ] + סיבה
 
-היה קונקרטי, מעורר השראה ומקצועי! גם ממידע מינימלי חלץ מקסימום תובנות.""",
+נתח כפסיכולוג מקצועי + מומחה HR!""",
         
-        'en': f"""You are a career psychoanalyst and HR consultant with 20 years of experience. Analyze the user's conversation and give a brief but valuable career analysis.
+        'en': f"""You are a combined expert: psychoanalyst (Freud, Jung) + HR specialist + MBTI consultant + Big Five expert. Analyze the conversation and provide professional assessment.
 
 USER CONVERSATION:
 {conversation_text}
 
-IMPORTANT: Even if there's little information, use psychoanalytic methods for deep analysis. Every word can reveal personality!
+YOUR TWO MAIN GOALS:
+1. DEEP PSYCHOLOGICAL ANALYSIS: Determine psychotype, archetype, defense mechanisms
+2. HR ASSESSMENT: Professional potential, suitable roles, hiring recommendations
 
-Conduct express analysis:
-1. Determine main personality traits (OCEAN: openness, conscientiousness, extraversion, agreeableness, neuroticism)
-2. Identify career motives and interests
-3. Analyze dreams/experiences for career insights
-4. Suggest 2-3 suitable professions
-5. Give brief development strategy
+Conduct MULTI-LEVEL analysis:
 
-RESPONSE FORMAT:
+🧠 PSYCHOLOGICAL PROFILE:
+- FREUD: personality structure (Id/Ego/Superego), defense mechanisms
+- JUNG: dominant archetype (Sage, Hero, Creator, Ruler, etc.)
+- MBTI: presumed type (4 letters with explanation)
+- BIG FIVE: assessment by OCEAN (1-10 scores each)
+
+💼 HR ASSESSMENT:
+- Leadership potential (1-10)
+- Teamwork (1-10)
+- Stress resistance (1-10)
+- Suitable professions (3 specific with psychological justification)
+- HR recommendation: RECOMMENDED / CONDITIONAL / NOT RECOMMENDED
+
+FORMAT:
 🎯 EXPRESS PROFILE:
-• Personality type: [brief description based on analysis]
-• Career motives: [main drivers]
-• Suitable professions: [2-3 professions with justification]
-• Development strategy: [brief recommendations]
+🧠 Psychotype: [MBTI] - [archetype]
+📊 Big Five: O[X] C[X] E[X] A[X] N[X]
+💼 HR scores: Leadership [X/10], Team [X/10], Stress [X/10]
+🎯 Professions: [3 specific with justification]
+✅ Recommendation: [RECOMMENDED/CONDITIONAL/NOT RECOMMENDED] + reason
 
-Be specific, motivating and professional! Extract maximum insights even from minimal information."""
+Analyze as professional psychologist + HR expert!"""
     }
     
     try:
@@ -1790,7 +1897,8 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$"),
                 CallbackQueryHandler(start_survey_callback, pattern="start_survey"),
-                CallbackQueryHandler(express_analysis_callback, pattern="express_analysis")
+                CallbackQueryHandler(express_analysis_callback, pattern="express_analysis"),
+                CallbackQueryHandler(continue_chat_callback, pattern="continue_chat")
             ],
             Q2: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
@@ -1825,6 +1933,10 @@ def main():
     application.add_handler(CommandHandler('help', help_command))
     application.add_handler(CommandHandler('hr_panel', hr_panel_command))
     application.add_handler(CommandHandler('hr_compare', hr_compare_command))
+    
+    # Глобальные обработчики callback'ов (вне разговора)
+    application.add_handler(CallbackQueryHandler(express_analysis_callback, pattern="express_analysis"))
+    application.add_handler(CallbackQueryHandler(continue_chat_callback, pattern="continue_chat"))
     
     # Обработчик для всех остальных сообщений (вне опроса)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_general_message))
