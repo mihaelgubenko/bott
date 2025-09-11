@@ -247,6 +247,100 @@ def get_navigation_keyboard(current_question, user_lang):
     
     return InlineKeyboardMarkup(keyboard) if keyboard else None
 
+async def think_and_respond(user_message, user_lang='ru'):
+    """Функция для 'размышления' бота через GPT"""
+    thinking_prompts = {
+        'ru': f"""Ты психологический бот-консультант. Пользователь написал: "{user_message}"
+
+Проанализируй его сообщение и дай умный, эмпатичный ответ как профессиональный психолог:
+- Если это вопрос о возможностях - объясни что ты умеешь
+- Если это просто приветствие - поприветствуй дружелюбно
+- Если это личный вопрос - дай краткий психологический совет
+- Если просят помощь - предложи начать анализ
+- Всегда отвечай на русском языке
+- Будь теплым, профессиональным и полезным
+- Ответ должен быть 1-3 предложения
+
+Ответь ТОЛЬКО текстом ответа, без дополнительных комментариев.""",
+        
+        'he': f"""אתה בוט פסיכולוגי-יועץ. המשתמש כתב: "{user_message}"
+
+נתח את ההודעה שלו ותן תשובה חכמה ואמפטית כפסיכולוג מקצועי:
+- אם זה שאלה על יכולות - הסבר מה אתה יודע לעשות
+- אם זה רק ברכה - בירך בידידותיות
+- אם זה שאלה אישית - תן עצה פסיכולוגית קצרה
+- אם מבקשים עזרה - הצע להתחיל בניתוח
+- תמיד תשב בעברית
+- היה חם, מקצועי ומועיל
+- התשובה צריכה להיות 1-3 משפטים
+
+תשב רק בטקסט התשובה, בלי הערות נוספות.""",
+        
+        'en': f"""You are a psychological counselor bot. The user wrote: "{user_message}"
+
+Analyze their message and give a smart, empathetic response as a professional psychologist:
+- If it's a question about capabilities - explain what you can do
+- If it's just a greeting - greet friendly
+- If it's a personal question - give brief psychological advice
+- If asking for help - suggest starting analysis
+- Always respond in English
+- Be warm, professional and helpful
+- Response should be 1-3 sentences
+
+Respond ONLY with the answer text, no additional comments."""
+    }
+    
+    # Защита от неизвестных языков
+    if user_lang not in thinking_prompts:
+        user_lang = 'ru'
+    
+    try:
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": thinking_prompts[user_lang]}],
+            max_tokens=200,
+            temperature=0.7,
+            timeout=30
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Ошибка в think_and_respond: {e}")
+        fallback_responses = {
+            'ru': "Понимаю! Я здесь, чтобы помочь с психологическим анализом. Напишите /start для начала профессионального анализа личности.",
+            'he': "מבין! אני כאן כדי לעזור בניתוח פסיכולוגי. כתבו /start להתחלת ניתוח מקצועי של האישיות.",
+            'en': "I understand! I'm here to help with psychological analysis. Type /start to begin professional personality analysis."
+        }
+        return fallback_responses.get(user_lang, fallback_responses['ru'])
+
+async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка обычных сообщений вне опроса"""
+    user_message = update.message.text
+    user_lang = context.user_data.get('language', detect_language(user_message))
+    
+    # Сохраняем определенный язык
+    context.user_data['language'] = user_lang
+    
+    # Показываем "думает..."
+    thinking_messages = {
+        'ru': "🤔 Думаю...",
+        'he': "🤔 חושב...",
+        'en': "🤔 Thinking..."
+    }
+    
+    # Защита от неизвестных языков
+    if user_lang not in thinking_messages:
+        user_lang = 'ru'
+    
+    thinking_msg = await update.message.reply_text(thinking_messages[user_lang])
+    
+    # Получаем умный ответ
+    smart_response = await think_and_respond(user_message, user_lang)
+    
+    # Удаляем "думает" и отправляем ответ
+    await thinking_msg.delete()
+    await update.message.reply_text(smart_response)
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда помощи"""
     # Определяем язык по команде или предыдущим сообщениям
@@ -265,17 +359,44 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['language'] = user_lang
     context.user_data['state'] = 0
     context.user_data['language_detected'] = False
+    context.user_data['survey_started'] = False
     
     # Инициализируем данные пользователя
     user_data[user.id] = {'answers': [None] * 7, 'language': user_lang}
     
-    # Отправляем приветствие и первый вопрос отдельными сообщениями
-    await update.message.reply_text(
-        GREETINGS[user_lang],
-        parse_mode=ParseMode.MARKDOWN
-    )
+    # Отправляем только приветствие с кнопкой для начала
+    start_button_text = {
+        'ru': '🚀 Начать анализ',
+        'he': '🚀 התחל ניתוח',
+        'en': '🚀 Start Analysis'
+    }
+    
+    # Защита от неизвестных языков
+    if user_lang not in start_button_text:
+        user_lang = 'ru'
+    
+    keyboard = [[InlineKeyboardButton(start_button_text[user_lang], callback_data="start_survey")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
+        GREETINGS[user_lang],
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
+    )
+    
+    return Q1
+
+async def start_survey_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начинаем собственно опрос после нажатия кнопки"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = query.from_user
+    user_lang = context.user_data.get('language', 'ru')
+    context.user_data['survey_started'] = True
+    
+    # Показываем первый вопрос
+    await query.edit_message_text(
         QUESTIONS[user_lang][0],
         reply_markup=get_navigation_keyboard(0, user_lang)
     )
@@ -286,6 +407,12 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     user = update.effective_user
     state = context.user_data.get('state', 0)
     answer = update.message.text.strip()
+    
+    # Проверяем, начат ли опрос
+    if not context.user_data.get('survey_started', False):
+        # Если опрос не начат, используем умные ответы
+        await handle_general_message(update, context)
+        return ConversationHandler.END
     
     user_lang = context.user_data.get('language', 'ru')
     
@@ -865,7 +992,8 @@ def main():
         states={
             Q1: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
-                CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
+                CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$"),
+                CallbackQueryHandler(start_survey_callback, pattern="start_survey")
             ],
             Q2: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
@@ -898,6 +1026,9 @@ def main():
     
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('help', help_command))
+    
+    # Обработчик для всех остальных сообщений (вне опроса)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_general_message))
     
     # Устанавливаем команды бота после инициализации
     async def post_init(application):
