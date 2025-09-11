@@ -552,20 +552,27 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
     if len(context.user_data['conversation_history']) > 10:
         context.user_data['conversation_history'] = context.user_data['conversation_history'][-10:]
     
+    # Также сохраняем в глобальную переменную для экспресс-анализа
+    if user.id not in conversation_history:
+        conversation_history[user.id] = []
+    conversation_history[user.id].append(user_message)
+    if len(conversation_history[user.id]) > 10:
+        conversation_history[user.id] = conversation_history[user.id][-10:]
+    
     # Проверяем, ждем ли мы данные для экспресс-анализа
     if context.user_data.get('waiting_for_express_data', False):
         # Если накопилось достаточно данных, делаем экспресс-анализ
-        if len(context.user_data['conversation_history']) >= 3:
+        if len(context.user_data['conversation_history']) >= 1:
             context.user_data['waiting_for_express_data'] = False
             await update.message.reply_text("🔄 Анализирую ваши сообщения...")
             await process_express_analysis(update, context)
             return
         else:
-            # Просим еще рассказать
+            # Просим еще рассказать более профессионально
             messages = {
-                'ru': "Расскажите еще что-нибудь о себе, своих мечтах или переживаниях...",
-                'he': "ספרו עוד משהו על עצמכם, החלומות או החוויות שלכם...",
-                'en': "Tell me more about yourself, your dreams or experiences..."
+                'ru': "Интересно! Расскажите еще что-то о себе - что вас мотивирует, какие у вас цели, или поделитесь любыми мыслями...",
+                'he': "מעניין! ספרו עוד משהו על עצמכם - מה מניע אתכם, אילו מטרות יש לכם, או שתפו כל מחשבה...",
+                'en': "Interesting! Tell me more about yourself - what motivates you, what goals you have, or share any thoughts..."
             }
             await update.message.reply_text(messages[user_lang])
             return
@@ -730,34 +737,49 @@ async def express_analysis_callback(update: Update, context: ContextTypes.DEFAUL
     user_lang = context.user_data.get('language', 'ru')
     
     # Собираем последние сообщения пользователя для анализа
-    conversation_data = context.user_data.get('conversation_history', [])
+    conversation_data = conversation_history.get(user.id, [])
     
-    if len(conversation_data) < 3:
-        # Если мало данных, просим рассказать больше
+    if len(conversation_data) < 1:
+        # Если нет данных, задаем профессиональные вопросы
         express_intro = {
             'ru': """⚡ **Экспресс-анализ из диалога**
 
 Цель: быстро определить ваш психотип и подходящие профессии на основе ваших сообщений.
 
-**Для точного анализа мне нужно больше информации о вас.**
+**Давайте познакомимся! Расскажите мне:**
 
-Расскажите о себе, своих интересах, работе, мечтах или снах - что угодно! Я проанализирую ваши слова и дам карьерные рекомендации.""",
+• Что вас больше всего вдохновляет в жизни?
+• Какие задачи приносят вам радость?
+• О чем вы мечтаете в профессиональном плане?
+• Какие у вас есть сильные стороны?
+
+Или просто поделитесь любыми мыслями - я проанализирую и дам карьерные рекомендации!""",
             
             'he': """⚡ **ניתוח מהיר מהשיחה**
 
 מטרה: לקבוע במהירות את הפסיכוטיפ והמקצועות המתאימים על בסיס ההודעות שלכם.
 
-**לניתוח מדויק אני צריך יותר מידע עליכם.**
+**בואו נכיר! ספרו לי:**
 
-ספרו על עצמכם, התחביבים, העבודה, החלומות או החוויות - כל דבר! אנתח את המילים שלכם ואתן המלצות קריירה.""",
+• מה הכי מעורר השראה בחיים שלכם?
+• אילו משימות מביאות לכם שמחה?
+• על מה אתם חולמים מבחינה מקצועית?
+• מה החוזקות שלכם?
+
+או פשוט שתפו כל מחשבה - אנתח ואתן המלצות קריירה!""",
             
             'en': """⚡ **Express analysis from chat**
 
 Goal: quickly determine your psychotype and suitable professions based on your messages.
 
-**For accurate analysis I need more information about you.**
+**Let's get acquainted! Tell me:**
 
-Tell me about yourself, your interests, work, dreams or experiences - anything! I'll analyze your words and give career recommendations."""
+• What inspires you most in life?
+• What tasks bring you joy?
+• What are your professional dreams?
+• What are your strengths?
+
+Or just share any thoughts - I'll analyze and give career recommendations!"""
         }
         
         await query.edit_message_text(express_intro[user_lang], parse_mode=ParseMode.MARKDOWN)
@@ -825,25 +847,54 @@ async def process_express_analysis(update: Update, context: ContextTypes.DEFAULT
     """Обработка экспресс-анализа из диалога"""
     user = update.effective_user
     user_lang = context.user_data.get('language', 'ru')
-    conversation_data = context.user_data.get('conversation_history', [])
     
-    if not conversation_data:
-        error_msg = {
-            'ru': "❌ Недостаточно данных для анализа. Попробуйте полный опрос.",
-            'he': "❌ לא מספיק נתונים לניתוח. נסו את הסקר המלא.",
-            'en': "❌ Not enough data for analysis. Try the full survey."
+    # Получаем данные из глобальной переменной conversation_history
+    conversation_data = conversation_history.get(user.id, [])
+    
+    if not conversation_data or len(conversation_data) < 1:
+        # Если нет данных, задаем профессиональные вопросы
+        questions = {
+            'ru': """🤔 **Давайте познакомимся поближе!**
+
+Расскажите мне что-то о себе:
+• Что вас вдохновляет?
+• Какие у вас мечты?
+• Что приносит радость?
+• О чем вы думаете перед сном?
+
+Любая информация поможет мне понять ваш психотип!""",
+            'he': """🤔 **בואו נכיר יותר!**
+
+ספרו לי משהו על עצמכם:
+• מה מעורר השראה?
+• אילו חלומות יש לכם?
+• מה מביא שמחה?
+• על מה אתם חושבים לפני השינה?
+
+כל מידע יעזור לי להבין את הפסיכוטיפ שלכם!""",
+            'en': """🤔 **Let's get to know each other better!**
+
+Tell me something about yourself:
+• What inspires you?
+• What dreams do you have?
+• What brings joy?
+• What do you think about before sleep?
+
+Any information will help me understand your psychotype!"""
         }
-        await update.message.reply_text(error_msg[user_lang])
+        await update.message.reply_text(questions[user_lang], parse_mode=ParseMode.MARKDOWN)
         return
     
     # Создаем промпт для экспресс-анализа
     conversation_text = " ".join(conversation_data)
     
     express_prompts = {
-        'ru': f"""Ты карьерный психоаналитик и HR-профориентолог. Проанализируй диалог с пользователем и дай краткий, но ценный карьерный анализ.
+        'ru': f"""Ты карьерный психоаналитик и HR-профориентолог с 20-летним опытом. Проанализируй диалог с пользователем и дай краткий, но ценный карьерный анализ.
 
 ДИАЛОГ ПОЛЬЗОВАТЕЛЯ:
 {conversation_text}
+
+ВАЖНО: Даже если информации мало, используй психоаналитические методы для глубокого анализа. Каждое слово может раскрыть личность!
 
 Проведи экспресс-анализ:
 1. Определи основные черты личности (OCEAN: открытость, добросовестность, экстраверсия, доброжелательность, нейротизм)
@@ -854,17 +905,19 @@ async def process_express_analysis(update: Update, context: ContextTypes.DEFAULT
 
 ФОРМАТ ОТВЕТА:
 🎯 ЭКСПРЕСС-ПРОФИЛЬ:
-• Тип личности: [краткое описание]
+• Тип личности: [краткое описание на основе анализа]
 • Карьерные мотивы: [основные драйверы]
 • Подходящие профессии: [2-3 профессии с обоснованием]
 • Стратегия развития: [краткие рекомендации]
 
-Будь конкретным и мотивирующим!""",
+Будь конкретным, мотивирующим и профессиональным! Даже из минимума информации извлеки максимум инсайтов.""",
         
-        'he': f"""אתה פסיכואנליטיקאי קריירה ויועץ HR. נתח את השיחה עם המשתמש ותן ניתוח קריירה קצר אבל בעל ערך.
+        'he': f"""אתה פסיכואנליטיקאי קריירה ויועץ HR עם 20 שנות ניסיון. נתח את השיחה עם המשתמש ותן ניתוח קריירה קצר אבל בעל ערך.
 
 השיחה של המשתמש:
 {conversation_text}
+
+חשוב: גם אם יש מעט מידע, השתמש בשיטות פסיכואנליטיות לניתוח עמוק. כל מילה יכולה לחשוף את האישיות!
 
 בצע ניתוח מהיר:
 1. קבע תכונות אישיות עיקריות (OCEAN: פתיחות, מצפוניות, אקסטרוורסיה, נעימות, נוירוטיות)
@@ -875,17 +928,19 @@ async def process_express_analysis(update: Update, context: ContextTypes.DEFAULT
 
 פורמט תשובה:
 🎯 פרופיל מהיר:
-• סוג אישיות: [תיאור קצר]
+• סוג אישיות: [תיאור קצר על בסיס הניתוח]
 • מניעי קריירה: [מניעים עיקריים]
 • מקצועות מתאימים: [2-3 מקצועות עם הנמקה]
 • אסטרטגיית פיתוח: [המלצות קצרות]
 
-היה קונקרטי ומעורר השראה!""",
+היה קונקרטי, מעורר השראה ומקצועי! גם ממידע מינימלי חלץ מקסימום תובנות.""",
         
-        'en': f"""You are a career psychoanalyst and HR consultant. Analyze the user's conversation and give a brief but valuable career analysis.
+        'en': f"""You are a career psychoanalyst and HR consultant with 20 years of experience. Analyze the user's conversation and give a brief but valuable career analysis.
 
 USER CONVERSATION:
 {conversation_text}
+
+IMPORTANT: Even if there's little information, use psychoanalytic methods for deep analysis. Every word can reveal personality!
 
 Conduct express analysis:
 1. Determine main personality traits (OCEAN: openness, conscientiousness, extraversion, agreeableness, neuroticism)
@@ -896,12 +951,12 @@ Conduct express analysis:
 
 RESPONSE FORMAT:
 🎯 EXPRESS PROFILE:
-• Personality type: [brief description]
+• Personality type: [brief description based on analysis]
 • Career motives: [main drivers]
 • Suitable professions: [2-3 professions with justification]
 • Development strategy: [brief recommendations]
 
-Be specific and motivating!"""
+Be specific, motivating and professional! Extract maximum insights even from minimal information."""
     }
     
     try:
