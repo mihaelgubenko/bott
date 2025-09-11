@@ -17,6 +17,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
+HR_PASSWORD = os.getenv('HR_PASSWORD', 'HR2024')
 
 # Проверка наличия всех необходимых переменных окружения
 if not BOT_TOKEN:
@@ -157,6 +158,10 @@ GREETINGS = {
 
 🌐 **שפות:** רוסית, עברית, English (זיהוי אוטומטי)
 
+💼 **למומחי HR:** 
+• `/hr_panel [סיסמה]` - צפייה במועמדים
+• `/hr_compare [סיסמה]` - השוואת מועמדים
+
 להתחלת ניתוח כתבו /start""",
     'en': """🎯 **Career Psychoanalyst + HR Consultant**
 
@@ -188,6 +193,10 @@ GREETINGS = {
 • Command /start for new analysis
 
 🌐 **Languages:** Русский, עברית, English (auto-detection)
+
+💼 **For HR specialists:** 
+• `/hr_panel [password]` - view candidates
+• `/hr_compare [password]` - compare candidates
 
 To start analysis, type /start"""
 }
@@ -221,6 +230,10 @@ HELP_TEXT = {
 
 🌐 **Языки:** Русский, Иврит, English (автоопределение)
 
+💼 **Для HR-специалистов:** 
+• `/hr_panel [пароль]` - просмотр кандидатов
+• `/hr_compare [пароль]` - сравнение кандидатов
+
 Для начала анализа напишите /start""",
     
     'he': """🤖 **יכולות הבוט הפסיכואנליטי:**
@@ -251,6 +264,10 @@ HELP_TEXT = {
 
 🌐 **שפות:** רוסית, עברית, English (זיהוי אוטומטי)
 
+💼 **למומחי HR:** 
+• `/hr_panel [סיסמה]` - צפייה במועמדים
+• `/hr_compare [סיסמה]` - השוואת מועמדים
+
 להתחלת ניתוח כתבו /start""",
     
     'en': """🤖 **Psychoanalytic Bot Capabilities:**
@@ -280,6 +297,10 @@ HELP_TEXT = {
 • Command /start for new analysis
 
 🌐 **Languages:** Русский, עברית, English (auto-detection)
+
+💼 **For HR specialists:** 
+• `/hr_panel [password]` - view candidates
+• `/hr_compare [password]` - compare candidates
 
 To start analysis, type /start"""
 }
@@ -397,6 +418,42 @@ def get_all_candidates():
         return []
     finally:
         conn.close()
+
+def check_hr_password(message_text):
+    """Проверка HR-пароля из сообщения"""
+    parts = message_text.split()
+    if len(parts) < 2:
+        return False
+    return parts[1] == HR_PASSWORD
+
+def get_hr_access_denied_message(language):
+    """Получение сообщения об отказе в доступе к HR-функциям"""
+    messages = {
+        'ru': """❌ **Эта функция доступна только HR-специалистам.**
+
+Но я могу провести для вас психологический анализ! 
+
+Напишите `/start` для начала анализа личности и профориентации.
+
+💡 *Для HR-специалистов: используйте команды с паролем*""",
+        
+        'he': """❌ **פונקציה זו זמינה רק למומחי HR.**
+
+אבל אני יכול לבצע עבורכם ניתוח פסיכולוגי!
+
+כתבו `/start` להתחלת ניתוח אישיות והכוונה מקצועית.
+
+💡 *למומחי HR: השתמשו בפקודות עם סיסמה*""",
+        
+        'en': """❌ **This function is available only for HR specialists.**
+
+But I can conduct a psychological analysis for you!
+
+Write `/start` to begin personality analysis and career guidance.
+
+💡 *For HR specialists: use commands with password*"""
+    }
+    return messages.get(language, messages['ru'])
 
 def detect_language(text):
     """Определение языка по тексту"""
@@ -606,10 +663,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def hr_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """HR-панель для просмотра кандидатов"""
     user = update.effective_user
+    user_lang = context.user_data.get('language', 'ru')
     
-    # Проверяем, что это админ
-    if user.id != ADMIN_CHAT_ID:
-        await update.message.reply_text("❌ Доступ запрещен. Только для HR-специалистов.")
+    # Проверяем пароль
+    if not check_hr_password(update.message.text):
+        await update.message.reply_text(get_hr_access_denied_message(user_lang), parse_mode=ParseMode.MARKDOWN)
         return
     
     # Получаем всех кандидатов
@@ -643,10 +701,11 @@ async def hr_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def hr_compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Сравнение кандидатов"""
     user = update.effective_user
+    user_lang = context.user_data.get('language', 'ru')
     
-    # Проверяем, что это админ
-    if user.id != ADMIN_CHAT_ID:
-        await update.message.reply_text("❌ Доступ запрещен. Только для HR-специалистов.")
+    # Проверяем пароль
+    if not check_hr_password(update.message.text):
+        await update.message.reply_text(get_hr_access_denied_message(user_lang), parse_mode=ParseMode.MARKDOWN)
         return
     
     # Получаем всех кандидатов
@@ -1708,9 +1767,7 @@ async def setup_bot_commands(application):
     commands = [
         BotCommand("start", "Начать психологический анализ"),
         BotCommand("help", "Справка о возможностях бота"),
-        BotCommand("cancel", "Отменить текущий опрос"),
-        BotCommand("hr_panel", "HR-панель (только для HR)"),
-        BotCommand("hr_compare", "Сравнение кандидатов (только для HR)")
+        BotCommand("cancel", "Отменить текущий опрос")
     ]
     await application.bot.set_my_commands(commands)
 
