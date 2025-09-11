@@ -1,6 +1,9 @@
 import logging
 import os
 import re
+import sqlite3
+import json
+from datetime import datetime
 from dotenv import load_dotenv
 from telegram import Update, ForceReply, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -59,22 +62,134 @@ QUESTIONS = {
     ]
 }
 
+# HR-специфичные вопросы для оценки кандидатов
+HR_QUESTIONS = {
+    'ru': [
+        "Опиши свой опыт работы. Какие задачи выполнял и как справлялся с трудностями?",
+        "Как ты работаешь в команде? Приведи пример успешного сотрудничества и конфликта.",
+        "Что тебя мотивирует в работе: деньги, признание, развитие или что-то другое?",
+        "Как ты справляешься со стрессом и дедлайнами? Опиши сложную ситуацию.",
+        "Какие у тебя карьерные цели на ближайшие 2-3 года?",
+        "Как ты относишься к обратной связи и критике? Приведи пример.",
+        "Что для тебя важнее: стабильность или вызовы? Почему?"
+    ],
+    'he': [
+        "תאר את הניסיון שלך בעבודה. אילו משימות ביצעת ואיך התמודדת עם קשיים?",
+        "איך אתה עובד בצוות? תן דוגמה לשיתוף פעולה מוצלח ולקונפליקט.",
+        "מה מניע אותך בעבודה: כסף, הכרה, פיתוח או משהו אחר?",
+        "איך אתה מתמודד עם לחץ ודדליינים? תאר מצב קשה.",
+        "אילו מטרות קריירה יש לך לשנים הקרובות 2-3?",
+        "איך אתה מתייחס למשוב וביקורת? תן דוגמה.",
+        "מה חשוב לך יותר: יציבות או אתגרים? למה?"
+    ],
+    'en': [
+        "Describe your work experience. What tasks did you perform and how did you handle difficulties?",
+        "How do you work in a team? Give an example of successful collaboration and conflict.",
+        "What motivates you at work: money, recognition, development or something else?",
+        "How do you handle stress and deadlines? Describe a difficult situation.",
+        "What are your career goals for the next 2-3 years?",
+        "How do you respond to feedback and criticism? Give an example.",
+        "What's more important to you: stability or challenges? Why?"
+    ]
+}
+
 GREETINGS = {
-    'ru': """🔬 **Добро пожаловать в профессиональный психологический анализ!**
+    'ru': """🎯 **Карьерный психоаналитик + HR-профориентолог**
 
-Это конфиденциальный опрос для глубокого анализа личности. Ваши ответы анонимны и будут удалены после анализа.
+**Определю ваш психотип и подходящие профессии за 3-5 минут!**
 
-📋 Используйте /help для справки о возможностях бота.""",
-    'he': """🔬 **ברוכים הבאים לניתוח פסיכולוגי מקצועי!**
+🔍 **Что я умею:**
+• Глубокий психологический анализ личности
+• Профайлинг по методикам Фрейда, Юнга, Майерс-Бриггс  
+• Анализ стиля речи и языковых паттернов
+• Определение темперамента и архетипа личности
+• Выявление защитных механизмов психики
+• **Анализ снов и переживаний** для карьерных инсайтов
+• **Рекомендации по личностному развитию**
 
-זהו סקר סודי לניתוח עמוק של האישיות. התשובות שלכם אנונימיות וימחקו לאחר הניתוח.
+📋 **Как это работает:**
+1. Отвечайте на 7 вопросов максимально подробно
+2. Пишите развёрнуто — чем больше текста, тем точнее анализ
+3. Будьте честными — анализ анонимен и конфиденциален
+4. После анализа все ваши данные автоматически удаляются
 
-📋 השתמשו ב-/help למידע על יכולות הבוט.""",
-    'en': """🔬 **Welcome to professional psychological analysis!**
+🔒 **Конфиденциальность:**
+• Ваши ответы не сохраняются в базе данных
+• После анализа все данные стираются из памяти
+• Анализ проводится с помощью ИИ без участия людей
 
-This is a confidential survey for deep personality analysis. Your answers are anonymous and will be deleted after analysis.
+⬅️ **Навигация:**
+• Используйте кнопку "Назад" для исправления предыдущего ответа
+• Команда /cancel для отмены опроса
+• Команда /start для нового анализа
 
-📋 Use /help for bot capabilities info."""
+🌐 **Языки:** Русский, Иврит, English (автоопределение)
+
+Для начала анализа напишите /start""",
+    'he': """🎯 **פסיכואנליטיקאי קריירה + יועץ HR**
+
+**אקבע את הפסיכוטיפ שלכם ומקצועות מתאימים תוך 3-5 דקות!**
+
+🔍 **מה אני יודע לעשות:**
+• ניתוח פסיכולוגי עמוק של האישיות
+• פרופיילינג לפי שיטות פרויד, יונג, מאיירס-בריגס
+• ניתוח סגנון דיבור ודפוסים לשוניים
+• קביעת טמפרמנט וארכיטיפ אישיות
+• זיהוי מנגנוני הגנה נפשיים
+• **ניתוח חלומות וחוויות** לתובנות קריירה
+• **המלצות לפיתוח אישי**
+
+📋 **איך זה עובד:**
+1. ענו על 7 שאלות בפירוט מירבי
+2. כתבו בהרחבה - ככל שיש יותר טקסט, הניתוח מדויק יותר
+3. היו כנים - הניתוח אנונימי וסודי
+4. לאחר הניתוח כל הנתונים שלכם נמחקים אוטומטית
+
+🔒 **סודיות:**
+• התשובות שלכם לא נשמרות בבסיס נתונים
+• לאחר הניתוח כל הנתונים נמחקים מהזיכרון
+• הניתוח מתבצע באמצעות בינה מלאכותית ללא השתתפות אנשים
+
+⬅️ **ניווט:**
+• השתמשו בכפתור "אחורה" לתיקון התשובה הקודמת
+• פקודה /cancel לביטול הסקר
+• פקודה /start לניתוח חדש
+
+🌐 **שפות:** רוסית, עברית, English (זיהוי אוטומטי)
+
+להתחלת ניתוח כתבו /start""",
+    'en': """🎯 **Career Psychoanalyst + HR Consultant**
+
+**I'll determine your psychotype and suitable professions in 3-5 minutes!**
+
+🔍 **What I can do:**
+• Deep psychological personality analysis
+• Profiling using Freud, Jung, Myers-Briggs methods
+• Speech style and linguistic pattern analysis
+• Temperament and personality archetype determination
+• Identification of psychological defense mechanisms
+• **Dream and experience analysis** for career insights
+• **Personal development recommendations**
+
+📋 **How it works:**
+1. Answer 7 questions in maximum detail
+2. Write extensively - the more text, the more accurate the analysis
+3. Be honest - analysis is anonymous and confidential
+4. After analysis, all your data is automatically deleted
+
+🔒 **Confidentiality:**
+• Your answers are not stored in database
+• After analysis, all data is erased from memory
+• Analysis is performed by AI without human involvement
+
+⬅️ **Navigation:**
+• Use "Back" button to correct previous answer
+• Command /cancel to cancel survey
+• Command /start for new analysis
+
+🌐 **Languages:** Русский, עברית, English (auto-detection)
+
+To start analysis, type /start"""
 }
 
 HELP_TEXT = {
@@ -182,6 +297,107 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# База данных кандидатов
+DB_NAME = 'candidates.db'
+
+def init_database():
+    """Инициализация базы данных кандидатов"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER UNIQUE,
+            name TEXT,
+            language TEXT,
+            analysis_data TEXT,
+            hr_scores TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    logger.info("База данных кандидатов инициализирована")
+
+def save_candidate(telegram_id, name, language, analysis_data, hr_scores):
+    """Сохранение кандидата в базу данных"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT OR REPLACE INTO candidates 
+            (telegram_id, name, language, analysis_data, hr_scores, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (telegram_id, name, language, json.dumps(analysis_data), json.dumps(hr_scores), datetime.now()))
+        
+        conn.commit()
+        logger.info(f"Кандидат {name} (ID: {telegram_id}) сохранен в базу данных")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка сохранения кандидата: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_candidate(telegram_id):
+    """Получение кандидата из базы данных"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('SELECT * FROM candidates WHERE telegram_id = ?', (telegram_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            return {
+                'id': result[0],
+                'telegram_id': result[1],
+                'name': result[2],
+                'language': result[3],
+                'analysis_data': json.loads(result[4]) if result[4] else None,
+                'hr_scores': json.loads(result[5]) if result[5] else None,
+                'created_at': result[6],
+                'updated_at': result[7]
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка получения кандидата: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_all_candidates():
+    """Получение всех кандидатов для HR-панели"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('SELECT * FROM candidates ORDER BY created_at DESC')
+        results = cursor.fetchall()
+        
+        candidates = []
+        for result in results:
+            candidates.append({
+                'id': result[0],
+                'telegram_id': result[1],
+                'name': result[2],
+                'language': result[3],
+                'analysis_data': json.loads(result[4]) if result[4] else None,
+                'hr_scores': json.loads(result[5]) if result[5] else None,
+                'created_at': result[6],
+                'updated_at': result[7]
+            })
+        return candidates
+    except Exception as e:
+        logger.error(f"Ошибка получения всех кандидатов: {e}")
+        return []
+    finally:
+        conn.close()
+
 def detect_language(text):
     """Определение языка по тексту"""
     # Считаем количество символов каждого языка
@@ -250,41 +466,47 @@ def get_navigation_keyboard(current_question, user_lang):
 async def think_and_respond(user_message, user_lang='ru'):
     """Функция для 'размышления' бота через GPT"""
     thinking_prompts = {
-        'ru': f"""Ты психологический бот-консультант. Пользователь написал: "{user_message}"
+        'ru': f"""Ты карьерный психоаналитик и HR-профориентолог. Пользователь написал: "{user_message}"
 
-Проанализируй его сообщение и дай умный, эмпатичный ответ как профессиональный психолог:
-- Если это вопрос о возможностях - объясни что ты умеешь
-- Если это просто приветствие - поприветствуй дружелюбно
-- Если это личный вопрос - дай краткий психологический совет
-- Если просят помощь - предложи начать анализ
+Проанализируй его сообщение и дай умный, эмпатичный ответ как профессиональный карьерный консультант:
+- Если это вопрос о возможностях - объясни что ты умеешь (анализ личности + карьерные рекомендации)
+- Если это просто приветствие - поприветствуй и предложи анализ карьеры
+- Если это личный вопрос - дай краткий психологический совет с карьерным контекстом
+- Если рассказывают сны/переживания - проанализируй с точки зрения карьерных мотивов
+- Если просят помощь - предложи экспресс-анализ или полный опрос
 - Всегда отвечай на русском языке
-- Будь теплым, профессиональным и полезным
+- Будь теплым, профессиональным и мотивирующим
+- Подчеркивай ценность результата (подходящие профессии, карьерные пути)
 - Ответ должен быть 1-3 предложения
 
 Ответь ТОЛЬКО текстом ответа, без дополнительных комментариев.""",
         
-        'he': f"""אתה בוט פסיכולוגי-יועץ. המשתמש כתב: "{user_message}"
+        'he': f"""אתה פסיכואנליטיקאי קריירה ויועץ HR. המשתמש כתב: "{user_message}"
 
-נתח את ההודעה שלו ותן תשובה חכמה ואמפטית כפסיכולוג מקצועי:
-- אם זה שאלה על יכולות - הסבר מה אתה יודע לעשות
-- אם זה רק ברכה - בירך בידידותיות
-- אם זה שאלה אישית - תן עצה פסיכולוגית קצרה
-- אם מבקשים עזרה - הצע להתחיל בניתוח
+נתח את ההודעה שלו ותן תשובה חכמה ואמפטית כיועץ קריירה מקצועי:
+- אם זה שאלה על יכולות - הסבר מה אתה יודע לעשות (ניתוח אישיות + המלצות קריירה)
+- אם זה רק ברכה - בירך והצע ניתוח קריירה
+- אם זה שאלה אישית - תן עצה פסיכולוגית קצרה עם הקשר קריירה
+- אם מספרים חלומות/חוויות - נתח מנקודת מבט של מניעי קריירה
+- אם מבקשים עזרה - הצע ניתוח מהיר או סקר מלא
 - תמיד תשב בעברית
-- היה חם, מקצועי ומועיל
+- היה חם, מקצועי ומעורר השראה
+- הדגש את הערך של התוצאה (מקצועות מתאימים, נתיבי קריירה)
 - התשובה צריכה להיות 1-3 משפטים
 
 תשב רק בטקסט התשובה, בלי הערות נוספות.""",
         
-        'en': f"""You are a psychological counselor bot. The user wrote: "{user_message}"
+        'en': f"""You are a career psychoanalyst and HR consultant. The user wrote: "{user_message}"
 
-Analyze their message and give a smart, empathetic response as a professional psychologist:
-- If it's a question about capabilities - explain what you can do
-- If it's just a greeting - greet friendly
-- If it's a personal question - give brief psychological advice
-- If asking for help - suggest starting analysis
+Analyze their message and give a smart, empathetic response as a professional career consultant:
+- If it's a question about capabilities - explain what you can do (personality analysis + career recommendations)
+- If it's just a greeting - greet and suggest career analysis
+- If it's a personal question - give brief psychological advice with career context
+- If they tell dreams/experiences - analyze from career motivation perspective
+- If asking for help - suggest express analysis or full survey
 - Always respond in English
-- Be warm, professional and helpful
+- Be warm, professional and motivating
+- Emphasize the value of results (suitable professions, career paths)
 - Response should be 1-3 sentences
 
 Respond ONLY with the answer text, no additional comments."""
@@ -321,6 +543,33 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
     # Сохраняем определенный язык
     context.user_data['language'] = user_lang
     
+    # Собираем историю диалога для экспресс-анализа
+    if 'conversation_history' not in context.user_data:
+        context.user_data['conversation_history'] = []
+    
+    # Добавляем сообщение в историю (максимум 10 последних)
+    context.user_data['conversation_history'].append(user_message)
+    if len(context.user_data['conversation_history']) > 10:
+        context.user_data['conversation_history'] = context.user_data['conversation_history'][-10:]
+    
+    # Проверяем, ждем ли мы данные для экспресс-анализа
+    if context.user_data.get('waiting_for_express_data', False):
+        # Если накопилось достаточно данных, делаем экспресс-анализ
+        if len(context.user_data['conversation_history']) >= 3:
+            context.user_data['waiting_for_express_data'] = False
+            await update.message.reply_text("🔄 Анализирую ваши сообщения...")
+            await process_express_analysis(update, context)
+            return
+        else:
+            # Просим еще рассказать
+            messages = {
+                'ru': "Расскажите еще что-нибудь о себе, своих мечтах или переживаниях...",
+                'he': "ספרו עוד משהו על עצמכם, החלומות או החוויות שלכם...",
+                'en': "Tell me more about yourself, your dreams or experiences..."
+            }
+            await update.message.reply_text(messages[user_lang])
+            return
+    
     # Показываем "думает..."
     thinking_messages = {
         'ru': "🤔 Думаю...",
@@ -347,6 +596,80 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_lang = context.user_data.get('language', 'ru')
     await update.message.reply_text(HELP_TEXT[user_lang], parse_mode=ParseMode.MARKDOWN)
 
+async def hr_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """HR-панель для просмотра кандидатов"""
+    user = update.effective_user
+    
+    # Проверяем, что это админ
+    if user.id != ADMIN_CHAT_ID:
+        await update.message.reply_text("❌ Доступ запрещен. Только для HR-специалистов.")
+        return
+    
+    # Получаем всех кандидатов
+    candidates = get_all_candidates()
+    
+    if not candidates:
+        await update.message.reply_text("📊 HR-панель\n\nКандидатов пока нет.")
+        return
+    
+    # Формируем отчет
+    report = "📊 **HR-ПАНЕЛЬ**\n\n"
+    report += f"Всего кандидатов: {len(candidates)}\n\n"
+    
+    for i, candidate in enumerate(candidates[:10], 1):  # Показываем последних 10
+        hr_scores = candidate.get('hr_scores', {})
+        total_score = sum(hr_scores.values()) / len(hr_scores) if hr_scores else 0
+        
+        report += f"**{i}. {candidate['name']}**\n"
+        report += f"• ID: {candidate['telegram_id']}\n"
+        report += f"• Язык: {candidate['language']}\n"
+        report += f"• Общая оценка: {total_score:.1f}/10\n"
+        report += f"• Дата: {candidate['created_at'][:10]}\n\n"
+    
+    if len(candidates) > 10:
+        report += f"... и еще {len(candidates) - 10} кандидатов\n\n"
+    
+    report += "💡 Используйте /hr_compare для сравнения кандидатов"
+    
+    await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
+
+async def hr_compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Сравнение кандидатов"""
+    user = update.effective_user
+    
+    # Проверяем, что это админ
+    if user.id != ADMIN_CHAT_ID:
+        await update.message.reply_text("❌ Доступ запрещен. Только для HR-специалистов.")
+        return
+    
+    # Получаем всех кандидатов
+    candidates = get_all_candidates()
+    
+    if len(candidates) < 2:
+        await update.message.reply_text("📊 Для сравнения нужно минимум 2 кандидата.")
+        return
+    
+    # Создаем сравнительную таблицу
+    report = "📊 **СРАВНЕНИЕ КАНДИДАТОВ**\n\n"
+    
+    # Заголовки
+    report += "| Кандидат | Лидерство | Команда | Стресс | Мотивация | Общая |\n"
+    report += "|----------|-----------|---------|--------|-----------|-------|\n"
+    
+    for candidate in candidates[:5]:  # Сравниваем топ-5
+        hr_scores = candidate.get('hr_scores', {})
+        total_score = sum(hr_scores.values()) / len(hr_scores) if hr_scores else 0
+        
+        name = candidate['name'][:15] + "..." if len(candidate['name']) > 15 else candidate['name']
+        leadership = hr_scores.get('leadership', 0)
+        teamwork = hr_scores.get('teamwork', 0)
+        stress = hr_scores.get('stress_resistance', 0)
+        motivation = hr_scores.get('motivation', 0)
+        
+        report += f"| {name} | {leadership} | {teamwork} | {stress} | {motivation} | {total_score:.1f} |\n"
+    
+    await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     
@@ -364,18 +687,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Инициализируем данные пользователя
     user_data[user.id] = {'answers': [None] * 7, 'language': user_lang}
     
-    # Отправляем только приветствие с кнопкой для начала
-    start_button_text = {
-        'ru': '🚀 Начать анализ',
-        'he': '🚀 התחל ניתוח',
-        'en': '🚀 Start Analysis'
+    # Отправляем приветствие с двумя кнопками
+    button_texts = {
+        'ru': {
+            'express': '⚡ Экспресс-анализ из диалога',
+            'full': '📋 Полный опрос (7 вопросов)'
+        },
+        'he': {
+            'express': '⚡ ניתוח מהיר מהשיחה',
+            'full': '📋 סקר מלא (7 שאלות)'
+        },
+        'en': {
+            'express': '⚡ Express analysis from chat',
+            'full': '📋 Full survey (7 questions)'
+        }
     }
     
     # Защита от неизвестных языков
-    if user_lang not in start_button_text:
+    if user_lang not in button_texts:
         user_lang = 'ru'
     
-    keyboard = [[InlineKeyboardButton(start_button_text[user_lang], callback_data="start_survey")]]
+    keyboard = [
+        [InlineKeyboardButton(button_texts[user_lang]['express'], callback_data="express_analysis")],
+        [InlineKeyboardButton(button_texts[user_lang]['full'], callback_data="start_survey")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
@@ -386,6 +721,59 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     return Q1
 
+async def express_analysis_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Экспресс-анализ из диалога"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = query.from_user
+    user_lang = context.user_data.get('language', 'ru')
+    
+    # Собираем последние сообщения пользователя для анализа
+    conversation_data = context.user_data.get('conversation_history', [])
+    
+    if len(conversation_data) < 3:
+        # Если мало данных, просим рассказать больше
+        express_intro = {
+            'ru': """⚡ **Экспресс-анализ из диалога**
+
+Цель: быстро определить ваш психотип и подходящие профессии на основе ваших сообщений.
+
+**Для точного анализа мне нужно больше информации о вас.**
+
+Расскажите о себе, своих интересах, работе, мечтах или снах - что угодно! Я проанализирую ваши слова и дам карьерные рекомендации.""",
+            
+            'he': """⚡ **ניתוח מהיר מהשיחה**
+
+מטרה: לקבוע במהירות את הפסיכוטיפ והמקצועות המתאימים על בסיס ההודעות שלכם.
+
+**לניתוח מדויק אני צריך יותר מידע עליכם.**
+
+ספרו על עצמכם, התחביבים, העבודה, החלומות או החוויות - כל דבר! אנתח את המילים שלכם ואתן המלצות קריירה.""",
+            
+            'en': """⚡ **Express analysis from chat**
+
+Goal: quickly determine your psychotype and suitable professions based on your messages.
+
+**For accurate analysis I need more information about you.**
+
+Tell me about yourself, your interests, work, dreams or experiences - anything! I'll analyze your words and give career recommendations."""
+        }
+        
+        await query.edit_message_text(express_intro[user_lang], parse_mode=ParseMode.MARKDOWN)
+        context.user_data['waiting_for_express_data'] = True
+        return Q1
+    else:
+        # Анализируем собранные данные
+        express_processing = {
+            'ru': "🔄 Анализирую ваши сообщения для определения психотипа и карьерных рекомендаций...",
+            'he': "🔄 מנתח את ההודעות שלכם לקביעת הפסיכוטיפ והמלצות קריירה...",
+            'en': "🔄 Analyzing your messages to determine psychotype and career recommendations..."
+        }
+        await query.edit_message_text(express_processing[user_lang])
+        await process_express_analysis(update, context)
+        return ConversationHandler.END
+
 async def start_survey_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Начинаем собственно опрос после нажатия кнопки"""
     query = update.callback_query
@@ -395,13 +783,161 @@ async def start_survey_callback(update: Update, context: ContextTypes.DEFAULT_TY
     user_lang = context.user_data.get('language', 'ru')
     context.user_data['survey_started'] = True
     
-    # Показываем первый вопрос
+    # Краткое вступление перед опросом
+    survey_intro = {
+        'ru': """📋 **Начинаем краткий опрос для глубокого анализа личности**
+
+Цель: определить ваш психотип, темперамент и подходящие профессии на основе научных методик (Фрейд, Юнг, MBTI, Big Five).
+
+**Важно:** Отвечайте честно и подробно - это поможет дать максимально точные карьерные рекомендации.
+
+Готовы? Начинаем с первого вопроса:""",
+        
+        'he': """📋 **מתחילים סקר קצר לניתוח עמוק של האישיות**
+
+מטרה: לקבוע את הפסיכוטיפ, הטמפרמנט והמקצועות המתאימים על בסיס שיטות מדעיות (פרויד, יונג, MBTI, Big Five).
+
+**חשוב:** ענו בכנות ובפירוט - זה יעזור לתת המלצות קריירה מדויקות ככל האפשר.
+
+מוכנים? מתחילים עם השאלה הראשונה:""",
+        
+        'en': """📋 **Starting a brief survey for deep personality analysis**
+
+Goal: determine your psychotype, temperament and suitable professions based on scientific methods (Freud, Jung, MBTI, Big Five).
+
+**Important:** Answer honestly and in detail - this will help provide the most accurate career recommendations.
+
+Ready? Let's start with the first question:"""
+    }
+    
+    # Показываем вступление и первый вопрос
+    intro_text = f"{survey_intro[user_lang]}\n\n{QUESTIONS[user_lang][0]}"
+    
     await query.edit_message_text(
-        QUESTIONS[user_lang][0],
-        reply_markup=get_navigation_keyboard(0, user_lang)
+        intro_text,
+        reply_markup=get_navigation_keyboard(0, user_lang),
+        parse_mode=ParseMode.MARKDOWN
     )
     
     return Q1
+
+async def process_express_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка экспресс-анализа из диалога"""
+    user = update.effective_user
+    user_lang = context.user_data.get('language', 'ru')
+    conversation_data = context.user_data.get('conversation_history', [])
+    
+    if not conversation_data:
+        error_msg = {
+            'ru': "❌ Недостаточно данных для анализа. Попробуйте полный опрос.",
+            'he': "❌ לא מספיק נתונים לניתוח. נסו את הסקר המלא.",
+            'en': "❌ Not enough data for analysis. Try the full survey."
+        }
+        await update.message.reply_text(error_msg[user_lang])
+        return
+    
+    # Создаем промпт для экспресс-анализа
+    conversation_text = " ".join(conversation_data)
+    
+    express_prompts = {
+        'ru': f"""Ты карьерный психоаналитик и HR-профориентолог. Проанализируй диалог с пользователем и дай краткий, но ценный карьерный анализ.
+
+ДИАЛОГ ПОЛЬЗОВАТЕЛЯ:
+{conversation_text}
+
+Проведи экспресс-анализ:
+1. Определи основные черты личности (OCEAN: открытость, добросовестность, экстраверсия, доброжелательность, нейротизм)
+2. Выяви карьерные мотивы и интересы
+3. Проанализируй сны/переживания на предмет карьерных инсайтов
+4. Предложи 2-3 подходящие профессии
+5. Дай краткую стратегию развития
+
+ФОРМАТ ОТВЕТА:
+🎯 ЭКСПРЕСС-ПРОФИЛЬ:
+• Тип личности: [краткое описание]
+• Карьерные мотивы: [основные драйверы]
+• Подходящие профессии: [2-3 профессии с обоснованием]
+• Стратегия развития: [краткие рекомендации]
+
+Будь конкретным и мотивирующим!""",
+        
+        'he': f"""אתה פסיכואנליטיקאי קריירה ויועץ HR. נתח את השיחה עם המשתמש ותן ניתוח קריירה קצר אבל בעל ערך.
+
+השיחה של המשתמש:
+{conversation_text}
+
+בצע ניתוח מהיר:
+1. קבע תכונות אישיות עיקריות (OCEAN: פתיחות, מצפוניות, אקסטרוורסיה, נעימות, נוירוטיות)
+2. זהה מניעי קריירה ותחומי עניין
+3. נתח חלומות/חוויות לזיהוי תובנות קריירה
+4. הצע 2-3 מקצועות מתאימים
+5. תן אסטרטגיית פיתוח קצרה
+
+פורמט תשובה:
+🎯 פרופיל מהיר:
+• סוג אישיות: [תיאור קצר]
+• מניעי קריירה: [מניעים עיקריים]
+• מקצועות מתאימים: [2-3 מקצועות עם הנמקה]
+• אסטרטגיית פיתוח: [המלצות קצרות]
+
+היה קונקרטי ומעורר השראה!""",
+        
+        'en': f"""You are a career psychoanalyst and HR consultant. Analyze the user's conversation and give a brief but valuable career analysis.
+
+USER CONVERSATION:
+{conversation_text}
+
+Conduct express analysis:
+1. Determine main personality traits (OCEAN: openness, conscientiousness, extraversion, agreeableness, neuroticism)
+2. Identify career motives and interests
+3. Analyze dreams/experiences for career insights
+4. Suggest 2-3 suitable professions
+5. Give brief development strategy
+
+RESPONSE FORMAT:
+🎯 EXPRESS PROFILE:
+• Personality type: [brief description]
+• Career motives: [main drivers]
+• Suitable professions: [2-3 professions with justification]
+• Development strategy: [brief recommendations]
+
+Be specific and motivating!"""
+    }
+    
+    try:
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": express_prompts[user_lang]}],
+            max_tokens=800,
+            temperature=0.7,
+            timeout=60
+        )
+        analysis = response.choices[0].message.content.strip()
+        
+        # Отправляем результат
+        await update.message.reply_text(analysis, parse_mode=ParseMode.MARKDOWN)
+        
+        # Предлагаем полный анализ
+        follow_up_messages = {
+            'ru': "💡 Хотите более детальный анализ? Нажмите /start для полного опроса из 7 вопросов!",
+            'he': "💡 רוצים ניתוח מפורט יותר? לחצו /start לסקר מלא של 7 שאלות!",
+            'en': "💡 Want a more detailed analysis? Press /start for a full 7-question survey!"
+        }
+        await update.message.reply_text(follow_up_messages[user_lang])
+        
+    except Exception as e:
+        logger.error(f"Ошибка экспресс-анализа: {e}")
+        error_msg = {
+            'ru': "❌ Ошибка анализа. Попробуйте полный опрос через /start",
+            'he': "❌ שגיאת ניתוח. נסו את הסקר המלא דרך /start",
+            'en': "❌ Analysis error. Try the full survey via /start"
+        }
+        await update.message.reply_text(error_msg[user_lang])
+    
+    finally:
+        # Очищаем данные
+        secure_cleanup_user_data(user.id, context)
 
 async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -554,8 +1090,49 @@ async def process_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not analysis.endswith('---') and '🔮 ПРОГНОЗ ПОВЕДЕНИЯ:' in analysis and not 'В отношениях:' in analysis:
             analysis += "\n\n[Анализ был автоматически дополнен для обеспечения полноты]"
         
-        # Отправляем админу полный анализ (с ответами и анализом речи)
-        admin_text = f"👤 Пользователь: {user.full_name} (ID: {user.id})\n🌐 Язык: {user_lang}\n\n📝 ОТВЕТЫ:\n{answers_block}\n\n{speech_analysis}\n\n🧠 ПОЛНЫЙ АНАЛИЗ:\n{analysis}"
+        # Рассчитываем HR-оценки
+        hr_scores = calculate_hr_scores(answers, user_lang)
+        hr_analysis = generate_hr_analysis(answers, hr_scores, user_lang)
+        
+        # Сохраняем кандидата в базу данных
+        analysis_data = {
+            'answers': answers,
+            'speech_analysis': speech_analysis,
+            'full_analysis': analysis,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        save_candidate(
+            telegram_id=user.id,
+            name=user.full_name or f"User_{user.id}",
+            language=user_lang,
+            analysis_data=analysis_data,
+            hr_scores=hr_scores
+        )
+        
+        # Отправляем админу полный анализ (с ответами, анализом речи и HR-оценками)
+        admin_text = f"👤 Кандидат: {user.full_name} (ID: {user.id})\n🌐 Язык: {user_lang}\n\n📝 ОТВЕТЫ:\n{answers_block}\n\n{speech_analysis}\n\n🧠 ПОЛНЫЙ АНАЛИЗ:\n{analysis}\n\n📊 HR-ОЦЕНКИ:\n"
+        
+        # Добавляем HR-оценки
+        for skill, score in hr_scores.items():
+            skill_name = {
+                'leadership': 'Лидерство',
+                'teamwork': 'Командная работа', 
+                'stress_resistance': 'Стрессоустойчивость',
+                'motivation': 'Мотивация',
+                'communication': 'Коммуникация',
+                'adaptability': 'Адаптивность',
+                'reliability': 'Надежность',
+                'creativity': 'Креативность',
+                'analytical_thinking': 'Аналитическое мышление',
+                'emotional_intelligence': 'Эмоциональный интеллект'
+            }.get(skill, skill)
+            admin_text += f"• {skill_name}: {score}/10\n"
+        
+        admin_text += f"\n🎯 РЕКОМЕНДАЦИЯ: {hr_analysis['recommendation']}\n📈 ОБЩАЯ ОЦЕНКА: {hr_analysis['total_score']}/10\n🏷️ РОЛИ: {', '.join(hr_analysis['roles']) if hr_analysis['roles'] else 'Не определены'}\n"
+        
+        if hr_analysis['red_flags']:
+            admin_text += f"⚠️ КРАСНЫЕ ФЛАГИ: {', '.join(hr_analysis['red_flags'])}\n"
         
         # Отправляем админу только если это не сам админ
         if user.id != ADMIN_CHAT_ID:
@@ -705,6 +1282,104 @@ def analyze_speech_style(text, language):
 • Self-focus: {'high' if analysis['personal_pronouns'] > 10 else 'moderate'}"""
     
     return style_description
+
+def calculate_hr_scores(answers, language):
+    """Расчет HR-оценок кандидата"""
+    all_text = " ".join(answers)
+    
+    # Базовые оценки (1-10)
+    scores = {
+        'leadership': 5,      # Лидерство
+        'teamwork': 5,        # Командная работа
+        'stress_resistance': 5,  # Стрессоустойчивость
+        'motivation': 5,      # Мотивация
+        'communication': 5,   # Коммуникация
+        'adaptability': 5,    # Адаптивность
+        'reliability': 5,     # Надежность
+        'creativity': 5,      # Креативность
+        'analytical_thinking': 5,  # Аналитическое мышление
+        'emotional_intelligence': 5  # Эмоциональный интеллект
+    }
+    
+    # Анализ текста для корректировки оценок
+    text_lower = all_text.lower()
+    
+    # Лидерство
+    leadership_words = ['лидер', 'руковод', 'управл', 'команд', 'веду', 'возглавляю', 'leader', 'manage', 'lead']
+    if any(word in text_lower for word in leadership_words):
+        scores['leadership'] = min(10, scores['leadership'] + 2)
+    
+    # Командная работа
+    team_words = ['команд', 'коллектив', 'совместно', 'вместе', 'сотруднич', 'team', 'together', 'collaborate']
+    if any(word in text_lower for word in team_words):
+        scores['teamwork'] = min(10, scores['teamwork'] + 2)
+    
+    # Стрессоустойчивость
+    stress_words = ['стресс', 'давлен', 'сложн', 'трудн', 'справляюсь', 'stress', 'pressure', 'difficult']
+    if any(word in text_lower for word in stress_words):
+        scores['stress_resistance'] = min(10, scores['stress_resistance'] + 1)
+    
+    # Мотивация
+    motivation_words = ['цель', 'мечт', 'стремл', 'развит', 'рост', 'goal', 'dream', 'develop', 'growth']
+    if any(word in text_lower for word in motivation_words):
+        scores['motivation'] = min(10, scores['motivation'] + 2)
+    
+    # Коммуникация
+    comm_words = ['общ', 'говори', 'объясн', 'презент', 'коммуник', 'communicate', 'present', 'explain']
+    if any(word in text_lower for word in comm_words):
+        scores['communication'] = min(10, scores['communication'] + 1)
+    
+    # Креативность
+    creative_words = ['творч', 'креатив', 'иде', 'нов', 'нестандарт', 'creative', 'idea', 'innovative']
+    if any(word in text_lower for word in creative_words):
+        scores['creativity'] = min(10, scores['creativity'] + 2)
+    
+    # Аналитическое мышление
+    analytical_words = ['анализ', 'логик', 'систем', 'структур', 'план', 'analyze', 'logic', 'system', 'plan']
+    if any(word in text_lower for word in analytical_words):
+        scores['analytical_thinking'] = min(10, scores['analytical_thinking'] + 2)
+    
+    return scores
+
+def generate_hr_analysis(answers, hr_scores, language):
+    """Генерация HR-анализа с рекомендациями"""
+    
+    # Определяем роли на основе оценок
+    roles = []
+    if hr_scores['leadership'] >= 7:
+        roles.append('Лидер' if language == 'ru' else 'Leader' if language == 'en' else 'מנהיג')
+    if hr_scores['teamwork'] >= 7:
+        roles.append('Командный игрок' if language == 'ru' else 'Team Player' if language == 'en' else 'שחקן צוות')
+    if hr_scores['creativity'] >= 7:
+        roles.append('Креативщик' if language == 'ru' else 'Creative' if language == 'en' else 'יצירתי')
+    if hr_scores['analytical_thinking'] >= 7:
+        roles.append('Аналитик' if language == 'ru' else 'Analyst' if language == 'en' else 'אנליסט')
+    
+    # Красные флаги
+    red_flags = []
+    if hr_scores['stress_resistance'] <= 3:
+        red_flags.append('Низкая стрессоустойчивость' if language == 'ru' else 'Low stress resistance' if language == 'en' else 'עמידות נמוכה ללחץ')
+    if hr_scores['teamwork'] <= 3:
+        red_flags.append('Проблемы с командной работой' if language == 'ru' else 'Teamwork issues' if language == 'en' else 'בעיות עבודה בצוות')
+    if hr_scores['reliability'] <= 3:
+        red_flags.append('Низкая надежность' if language == 'ru' else 'Low reliability' if language == 'en' else 'אמינות נמוכה')
+    
+    # Общая оценка
+    total_score = sum(hr_scores.values()) / len(hr_scores)
+    if total_score >= 8:
+        overall = 'Отличный кандидат' if language == 'ru' else 'Excellent candidate' if language == 'en' else 'מועמד מצוין'
+    elif total_score >= 6:
+        overall = 'Хороший кандидат' if language == 'ru' else 'Good candidate' if language == 'en' else 'מועמד טוב'
+    else:
+        overall = 'Требует дополнительной оценки' if language == 'ru' else 'Requires additional assessment' if language == 'en' else 'דורש הערכה נוספת'
+    
+    return {
+        'roles': roles,
+        'red_flags': red_flags,
+        'overall_assessment': overall,
+        'total_score': round(total_score, 1),
+        'recommendation': 'Найм' if total_score >= 6 else 'Доп. интервью' if total_score >= 4 else 'Не рекомендован'
+    }
 
 def create_analysis_prompt(answers_block, speech_analysis, language):
     """Создание промпта для анализа"""
@@ -978,12 +1653,17 @@ async def setup_bot_commands(application):
     commands = [
         BotCommand("start", "Начать психологический анализ"),
         BotCommand("help", "Справка о возможностях бота"),
-        BotCommand("cancel", "Отменить текущий опрос")
+        BotCommand("cancel", "Отменить текущий опрос"),
+        BotCommand("hr_panel", "HR-панель (только для HR)"),
+        BotCommand("hr_compare", "Сравнение кандидатов (только для HR)")
     ]
     await application.bot.set_my_commands(commands)
 
 def main():
     print("🚀 Запуск профессионального психоаналитического бота...")
+    
+    # Инициализируем базу данных
+    init_database()
     
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     
@@ -993,7 +1673,8 @@ def main():
             Q1: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$"),
-                CallbackQueryHandler(start_survey_callback, pattern="start_survey")
+                CallbackQueryHandler(start_survey_callback, pattern="start_survey"),
+                CallbackQueryHandler(express_analysis_callback, pattern="express_analysis")
             ],
             Q2: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
@@ -1026,6 +1707,8 @@ def main():
     
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler('hr_panel', hr_panel_command))
+    application.add_handler(CommandHandler('hr_compare', hr_compare_command))
     
     # Обработчик для всех остальных сообщений (вне опроса)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_general_message))
