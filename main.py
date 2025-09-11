@@ -533,12 +533,14 @@ async def think_and_respond(user_message, user_lang='ru'):
 2. Потом кратко анализируй (1-2 предложения)
 3. Задавай ОДИН вопрос для продолжения диалога
 4. Максимум 3 предложения в ответе
+5. Будь мягким и понимающим к опечаткам
 
 Если спрашивают "что умеешь" - отвечай что делаешь анализ личности и профориентацию.
 Если просто приветствие - поприветствуй и спроси о целях/мечтах.
 Если рассказывают о себе - кратко проанализируй и задай вопрос.
+Если не понял сообщение - попроси уточнить мягко.
 
-Будь кратким и по делу!""",
+Будь кратким, мягким и по делу!""",
         
         'he': f"""אתה פסיכואנליטיקאי ויועץ HR. המשתמש כתב: "{user_message}"
 
@@ -654,14 +656,13 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
     
     # Удаляем "думает" и отправляем ответ
     await thinking_msg.delete()
-    await update.message.reply_text(smart_response)
     
     # ПРОМЕЖУТОЧНЫЕ ПРЕДЛОЖЕНИЯ
     if message_count == 3:
         transition_texts = {
-            'ru': f"💭 **Вижу, вы готовы к более глубокому анализу!**\n\nВыберите формат:",
-            'he': f"💭 **אני רואה שאתם מוכנים לניתוח עמוק יותר!**\n\nבחרו פורמט:",
-            'en': f"💭 **I see you're ready for deeper analysis!**\n\nChoose format:"
+            'ru': f"{smart_response}\n\n💭 **Вижу, вы готовы к более глубокому анализу!**\n\nВыберите формат:",
+            'he': f"{smart_response}\n\n💭 **אני רואה שאתם מוכנים לניתוח עמוק יותר!**\n\nבחרו פורמט:",
+            'en': f"{smart_response}\n\n💭 **I see you're ready for deeper analysis!**\n\nChoose format:"
         }
         
         keyboard = [
@@ -679,9 +680,9 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
     
     elif message_count == 5:
         warning_texts = {
-            'ru': "🔔 **Еще одно сообщение и я начну анализ!**\n\nИли выберите действие:",
-            'he': "🔔 **עוד הודעה אחת ואתחיל ניתוח!**\n\nאו בחרו פעולה:",
-            'en': "🔔 **One more message and I'll start analysis!**\n\nOr choose action:"
+            'ru': f"{smart_response}\n\n🔔 **Еще одно сообщение и я начну анализ!**\n\nИли выберите действие:",
+            'he': f"{smart_response}\n\n🔔 **עוד הודעה אחת ואתחיל ניתוח!**\n\nאו בחרו פעולה:",
+            'en': f"{smart_response}\n\n🔔 **One more message and I'll start analysis!**\n\nOr choose action:"
         }
         
         keyboard = [
@@ -695,6 +696,10 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=reply_markup,
             parse_mode=ParseMode.MARKDOWN
         )
+    
+    else:
+        # Обычный ответ без кнопок
+        await update.message.reply_text(smart_response)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда помощи"""
@@ -1001,7 +1006,10 @@ Tell me something about yourself:
 
 Any information will help me understand your psychotype!"""
         }
-        await update.message.reply_text(questions[user_lang], parse_mode=ParseMode.MARKDOWN)
+        if update.message:
+            await update.message.reply_text(questions[user_lang], parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.callback_query.message.reply_text(questions[user_lang], parse_mode=ParseMode.MARKDOWN)
         return
     
     # Создаем промпт для экспресс-анализа
@@ -1122,8 +1130,13 @@ Analyze as professional psychologist + HR expert!"""
         )
         analysis = response.choices[0].message.content.strip()
         
-        # Отправляем результат
-        await update.message.reply_text(analysis, parse_mode=ParseMode.MARKDOWN)
+        # Отправляем результат (проверяем источник вызова)
+        if update.message:
+            # Вызов из обычного сообщения
+            await update.message.reply_text(analysis, parse_mode=ParseMode.MARKDOWN)
+        else:
+            # Вызов из callback'а кнопки
+            await update.callback_query.message.reply_text(analysis, parse_mode=ParseMode.MARKDOWN)
         
         # Предлагаем полный анализ
         follow_up_messages = {
@@ -1131,7 +1144,11 @@ Analyze as professional psychologist + HR expert!"""
             'he': "💡 רוצים ניתוח מפורט יותר? לחצו /start לסקר מלא של 7 שאלות!",
             'en': "💡 Want a more detailed analysis? Press /start for a full 7-question survey!"
         }
-        await update.message.reply_text(follow_up_messages[user_lang])
+        
+        if update.message:
+            await update.message.reply_text(follow_up_messages[user_lang])
+        else:
+            await update.callback_query.message.reply_text(follow_up_messages[user_lang])
         
     except Exception as e:
         logger.error(f"Ошибка экспресс-анализа: {e}")
@@ -1140,7 +1157,11 @@ Analyze as professional psychologist + HR expert!"""
             'he': "❌ שגיאת ניתוח. נסו את הסקר המלא דרך /start",
             'en': "❌ Analysis error. Try the full survey via /start"
         }
-        await update.message.reply_text(error_msg[user_lang])
+        
+        if update.message:
+            await update.message.reply_text(error_msg[user_lang])
+        else:
+            await update.callback_query.message.reply_text(error_msg[user_lang])
     
     finally:
         # Очищаем данные
