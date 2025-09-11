@@ -311,6 +311,9 @@ To start analysis, type /start"""
 # Временное хранилище ответов
 user_data = {}
 
+# Глобальная переменная для истории диалогов
+conversation_history = {}
+
 # Логирование
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -594,6 +597,7 @@ Respond ONLY with the answer text, no additional comments."""
 
 async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка обычных сообщений вне опроса"""
+    user = update.effective_user
     user_message = update.message.text
     user_lang = context.user_data.get('language', detect_language(user_message))
     
