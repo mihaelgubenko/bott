@@ -701,17 +701,25 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
         # Обычный ответ без кнопок
         await update.message.reply_text(smart_response)
         
-        # Добавляем кнопки для продолжения диалога
-        if message_count < 7:
+        # Показываем кнопки только в ключевые моменты
+        if message_count == 3:
+            # Предлагаем выбор после 3 сообщений
             keyboard = [
                 [InlineKeyboardButton("💬 Продолжить диалог", callback_data="continue_chat")],
                 [InlineKeyboardButton("⚡ Экспресс-анализ", callback_data="express_analysis")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text("Выберите действие:", reply_markup=reply_markup)
-        
-        # Лимит диалога - после 7 сообщений принудительно к анализу
-        if message_count >= 7:
+        elif message_count == 6:
+            # Предупреждение о завершении после 6 сообщений
+            keyboard = [
+                [InlineKeyboardButton("⚡ Анализ сейчас", callback_data="express_analysis")],
+                [InlineKeyboardButton("📋 Полный тест", callback_data="full_test")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("Выберите действие:", reply_markup=reply_markup)
+        elif message_count >= 7:
+            # Принудительный анализ после 7 сообщений
             await process_express_analysis(update, context)
             return
  
@@ -906,6 +914,14 @@ async def continue_chat_callback(update: Update, context: ContextTypes.DEFAULT_T
         continue_messages[user_lang],
         parse_mode=ParseMode.MARKDOWN
     )
+
+async def full_test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик кнопки 'Полный тест'"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Запускаем полный тест
+    await start_command(update, context)
 
 async def express_analysis_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Экспресс-анализ из диалога"""
@@ -1995,6 +2011,7 @@ def main():
     # Глобальные обработчики callback'ов (вне разговора)
     application.add_handler(CallbackQueryHandler(express_analysis_callback, pattern="express_analysis"))
     application.add_handler(CallbackQueryHandler(continue_chat_callback, pattern="continue_chat"))
+    application.add_handler(CallbackQueryHandler(full_test_callback, pattern="full_test"))
     
     # Обработчик для всех остальных сообщений (вне опроса)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_general_message))
