@@ -700,17 +700,72 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
     else:
         # Обычный ответ без кнопок
         await update.message.reply_text(smart_response)
+        
+        # Добавляем кнопки для продолжения диалога
+        if message_count < 7:
+            keyboard = [
+                [InlineKeyboardButton("💬 Продолжить диалог", callback_data="continue_chat")],
+                [InlineKeyboardButton("⚡ Экспресс-анализ", callback_data="express_analysis")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("Выберите действие:", reply_markup=reply_markup)
+        
+        # Лимит диалога - после 7 сообщений принудительно к анализу
+        if message_count >= 7:
+            await process_express_analysis(update, context)
+            return
+ 
+async def hr_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда для HR-специалистов - просмотр базы кандидатов"""
+    user = update.effective_user
+    args = context.args
+    
+    if not args or args[0] != HR_PASSWORD:
+        await update.message.reply_text(get_hr_access_denied_message('ru'))
+        return
+    
+    candidates = get_all_candidates()
+    if not candidates:
+        await update.message.reply_text("📊 База кандидатов пуста.")
+        return
+    
+    message = "📊 **База кандидатов:**\n\n"
+    for i, candidate in enumerate(candidates, 1):
+        message += f"**{i}. {candidate['name']}**\n"
+        message += f"Дата: {candidate['date']}\n"
+        message += f"Психотип: {candidate['psychotype']}\n"
+        message += f"Рекомендация: {candidate['recommendation']}\n\n"
+    
+    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+
+async def hr_compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда для HR-специалистов - сравнение кандидатов"""
+    user = update.effective_user
+    args = context.args
+    
+    if not args or args[0] != HR_PASSWORD:
+        await update.message.reply_text(get_hr_access_denied_message('ru'))
+        return
+    
+    candidates = get_all_candidates()
+    if len(candidates) < 2:
+        await update.message.reply_text("❌ Недостаточно кандидатов для сравнения (нужно минимум 2).")
+        return
+    
+    message = "🔍 **Сравнение кандидатов:**\n\n"
+    for i, candidate in enumerate(candidates, 1):
+        message += f"**{i}. {candidate['name']}**\n"
+        message += f"Психотип: {candidate['psychotype']}\n"
+        message += f"HR-оценки: {candidate['hr_scores']}\n"
+        message += f"Рекомендация: {candidate['recommendation']}\n\n"
+    
+    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда помощи"""
     # Определяем язык по команде или предыдущим сообщениям
     user_lang = context.user_data.get('language', 'ru')
     await update.message.reply_text(HELP_TEXT[user_lang], parse_mode=ParseMode.MARKDOWN)
-
-async def hr_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """HR-панель для просмотра кандидатов"""
-    user = update.effective_user
-    user_lang = context.user_data.get('language', 'ru')
     
     # Проверяем пароль
     if not check_hr_password(update.message.text):
