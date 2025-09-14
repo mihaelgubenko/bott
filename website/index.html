@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HR-Психоаналитический Бот | Автоматизируйте оценку кандидатов</title>
+    <meta name="description" content="Умный HR-бот для психоанализа кандидатов. Оценка за 5 минут вместо 2 часов. Методики Фрейда и Юнга. База данных кандидатов.">
+    <meta name="keywords" content="HR бот, психоанализ кандидатов, оценка персонала, Telegram бот, HR инструменты">
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="HR-Психоаналитический Бот | Автоматизируйте оценку кандидатов">
+    <meta property="og:description" content="Умный HR-бот для психоанализа кандидатов. Оценка за 5 минут вместо 2 часов.">
+    <meta property="og:type" content="website">
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Sans+Pro:wght@400;600&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/feather-icons@4.28.0/dist/feather.min.css" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <div class="logo">🧠 HR-Bot</div>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Возможности</a>
+                <a href="#pricing">Цены</a>
+                <a href="#contact">Контакты</a>
+                <a href="#" class="btn-try">Попробовать</a>
+            </div>
+            <div class="mobile-menu-toggle">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    🧠 УМНЫЙ HR-БОТ ДЛЯ<br>
+                    <span class="highlight">ПСИХОАНАЛИЗА КАНДИДАТОВ</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Автоматизируйте оценку персонала с помощью ИИ
+                </p>
+                <div class="hero-features">
+                    <div class="feature-item">
+                        <i data-feather="brain"></i>
+                        <span>Психоанализ по методикам Фрейда и Юнга</span>
+                    </div>
+                    <div class="feature-item">
+                        <i data-feather="bar-chart-2"></i>
+                        <span>HR-оценки по 10 ключевым навыкам</span>
+                    </div>
+                    <div class="feature-item">
+                        <i data-feather="database"></i>
+                        <span>База данных кандидатов</span>
+                    </div>
+                    <div class="feature-item">
+                        <i data-feather="globe"></i>
+                        <span>Многоязычность (RU/EN/HE)</span>
+                    </div>
+                </div>
+                <div class="hero-buttons">
+                    <a href="#demo" class="btn btn-primary">
+                        <i data-feather="play-circle"></i>
+                        Попробовать демо
+                    </a>
+                    <a href="#pricing" class="btn btn-secondary">
+                        <i data-feather="credit-card"></i>
+                        Купить сейчас
+                    </a>
+                </div>
+            </div>
+            <div class="hero-image">
+                <div class="bot-preview">
+                    <div class="phone-mockup">
+                        <div class="screen">
+                            <div class="chat-header">
+                                <div class="bot-avatar">🧠</div>
+                                <div class="bot-info">
+                                    <div class="bot-name">HR-Психоаналитик</div>
+                                    <div class="bot-status">онлайн</div>
+                                </div>
+                            </div>
+                            <div class="chat-messages">
+                                <div class="message bot-message">
+                                    <div class="message-text">
+                                        🎯 Карьерный психоаналитик + HR-профориентолог
+                                        
+                                        Определю ваш психотип и подходящие профессии за 3-5 минут!
+                                    </div>
+                                </div>
+                                <div class="message user-message">
+                                    <div class="message-text">
+                                        Привет! Хочу пройти анализ
+                                    </div>
+                                </div>
+                                <div class="message bot-message">
+                                    <div class="message-text">
+                                        Отлично! Выберите тип анализа:
+                                        
+                                        ⚡ Экспресс-анализ из диалога
+                                        📋 Полный опрос (7 вопросов)
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Problem-Solution Section -->
+    <section class="problem-solution">
+        <div class="container">
+            <div class="section-grid">
+                <div class="problem-side">
+                    <h2>❌ ПРОБЛЕМЫ HR-СПЕЦИАЛИСТОВ</h2>
+                    <ul class="problem-list">
+                        <li>
+                            <i data-feather="clock"></i>
+                            <span>Долгие интервью с кандидатами</span>
+                        </li>
+                        <li>
+                            <i data-feather="user-x"></i>
+                            <span>Субъективная оценка личности</span>
+                        </li>
+                        <li>
+                            <i data-feather="shuffle"></i>
+                            <span>Сложность сравнения кандидатов</span>
+                        </li>
+                        <li>
+                            <i data-feather="file-x"></i>
+                            <span>Нет систематизации данных</span>
+                        </li>
+                    </ul>
+                </div>
+                <div class="solution-side">
+                    <h2>✅ НАШЕ РЕШЕНИЕ</h2>
+                    <ul class="solution-list">
+                        <li>
+                            <i data-feather="zap"></i>
+                            <span>Анализ за 5 минут вместо 2 часов</span>
+                        </li>
+                        <li>
+                            <i data-feather="cpu"></i>
+                            <span>Объективная оценка через ИИ</span>
+                        </li>
+                        <li>
+                            <i data-feather="users"></i>
+                            <span>Автоматическое сравнение кандидатов</span>
+                        </li>
+                        <li>
+                            <i data-feather="database"></i>
+                            <span>Полная база данных с аналитикой</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">Возможности платформы</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>ПСИХОАНАЛИЗ</h3>
+                    <ul>
+                        <li>7 вопросов для глубокого анализа</li>
+                        <li>Методики Фрейда/Юнга</li>
+                        <li>Анализ снов и переживаний</li>
+                        <li>Определение защитных механизмов</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>HR-ОЦЕНКИ</h3>
+                    <ul>
+                        <li>10 ключевых навыков</li>
+                        <li>Рекомендации по найму</li>
+                        <li>Красные флаги</li>
+                        <li>Прогноз успеха в должности</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🌐</div>
+                    <h3>МНОГОЯЗЫЧНОСТЬ</h3>
+                    <ul>
+                        <li>Русский, английский</li>
+                        <li>Иврит</li>
+                        <li>Автоопределение языка</li>
+                        <li>Локализованный интерфейс</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="demo">
+        <div class="container">
+            <h2 class="section-title">🎬 ПОСМОТРИТЕ, КАК ЭТО РАБОТАЕТ</h2>
+            <div class="demo-grid">
+                <div class="demo-item">
+                    <div class="demo-image">
+                        <div class="screenshot-placeholder">
+                            <i data-feather="message-circle"></i>
+                            <span>Приветствие бота</span>
+                        </div>
+                    </div>
+                    <h4>1. Начало диалога</h4>
+                    <p>Бот приветствует кандидата и предлагает два типа анализа</p>
+                </div>
+                <div class="demo-item">
+                    <div class="demo-image">
+                        <div class="screenshot-placeholder">
+                            <i data-feather="edit"></i>
+                            <span>Процесс анализа</span>
+                        </div>
+                    </div>
+                    <h4>2. Психоанализ</h4>
+                    <p>Кандидат отвечает на вопросы, бот анализирует ответы</p>
+                </div>
+                <div class="demo-item">
+                    <div class="demo-image">
+                        <div class="screenshot-placeholder">
+                            <i data-feather="users"></i>
+                            <span>HR-панель</span>
+                        </div>
+                    </div>
+                    <h4>3. HR-панель</h4>
+                    <p>HR видит всех кандидатов с оценками и рекомендациями</p>
+                </div>
+                <div class="demo-item">
+                    <div class="demo-image">
+                        <div class="screenshot-placeholder">
+                            <i data-feather="bar-chart"></i>
+                            <span>Сравнение</span>
+                        </div>
+                    </div>
+                    <h4>4. Сравнение кандидатов</h4>
+                    <p>Автоматическое сравнение по всем критериям</p>
+                </div>
+            </div>
+            <div class="demo-testimonial">
+                <blockquote>
+                    "За 5 минут получил полный психологический профиль кандидата!"
+                    <cite>- Анна К., HR-директор</cite>
+                </blockquote>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="pricing">
+        <div class="container">
+            <h2 class="section-title">💼 ТАРИФЫ ДЛЯ HR-СПЕЦИАЛИСТОВ</h2>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <div class="plan-header">
+                        <h3>СТАРТ</h3>
+                        <div class="price">₽15,000<span>/месяц</span></div>
+                    </div>
+                    <ul class="plan-features">
+                        <li><i data-feather="check"></i> До 50 кандидатов</li>
+                        <li><i data-feather="check"></i> Базовая аналитика</li>
+                        <li><i data-feather="check"></i> Email поддержка</li>
+                        <li><i data-feather="check"></i> 1 HR-специалист</li>
+                        <li><i data-feather="check"></i> Многоязычность</li>
+                    </ul>
+                    <button class="btn btn-outline">Скоро доступно</button>
+                </div>
+                <div class="pricing-card featured">
+                    <div class="popular-badge">Популярный</div>
+                    <div class="plan-header">
+                        <h3>ПРОФИ</h3>
+                        <div class="price">₽35,000<span>/месяц</span></div>
+                    </div>
+                    <ul class="plan-features">
+                        <li><i data-feather="check"></i> До 200 кандидатов</li>
+                        <li><i data-feather="check"></i> Расширенная аналитика</li>
+                        <li><i data-feather="check"></i> Telegram поддержка</li>
+                        <li><i data-feather="check"></i> До 5 HR-специалистов</li>
+                        <li><i data-feather="check"></i> Экспорт данных</li>
+                    </ul>
+                    <button class="btn btn-primary">Скоро доступно</button>
+                </div>
+                <div class="pricing-card">
+                    <div class="plan-header">
+                        <h3>КОРПОРАТ</h3>
+                        <div class="price">₽75,000<span>/месяц</span></div>
+                    </div>
+                    <ul class="plan-features">
+                        <li><i data-feather="check"></i> Безлимит кандидатов</li>
+                        <li><i data-feather="check"></i> Приоритетная поддержка</li>
+                        <li><i data-feather="check"></i> Индивидуальная настройка</li>
+                        <li><i data-feather="check"></i> API интеграция</li>
+                        <li><i data-feather="check"></i> Белый лейбл</li>
+                    </ul>
+                    <button class="btn btn-outline">Скоро доступно</button>
+                </div>
+            </div>
+            <div class="pricing-note">
+                <p>После оплаты вы получите пароль для доступа к HR-функциям бота</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section class="testimonials">
+        <div class="container">
+            <h2 class="section-title">💬 ЧТО ГОВОРЯТ HR-СПЕЦИАЛИСТЫ</h2>
+            <div class="testimonials-grid">
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        <p>"Экономит 80% времени на интервью. Качество анализа выше, чем у психологов."</p>
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">М</div>
+                        <div class="author-info">
+                            <div class="author-name">Мария С.</div>
+                            <div class="author-position">Head of HR, IT-компания</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        <p>"Наконец-то объективная оценка кандидатов. Данные помогают принимать решения."</p>
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">Д</div>
+                        <div class="author-info">
+                            <div class="author-name">Дмитрий К.</div>
+                            <div class="author-position">HR-менеджер, консалтинг</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="testimonial-card">
+                    <div class="testimonial-content">
+                        <p>"Бот работает на 3 языках. Идеально для международной компании."</p>
+                    </div>
+                    <div class="testimonial-author">
+                        <div class="author-avatar">S</div>
+                        <div class="author-info">
+                            <div class="author-name">Sarah L.</div>
+                            <div class="author-position">HR Director, Global Corp</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq">
+        <div class="container">
+            <h2 class="section-title">❓ ЧАСТО ЗАДАВАЕМЫЕ ВОПРОСЫ</h2>
+            <div class="faq-grid">
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>Насколько точный анализ?</h4>
+                        <i data-feather="plus"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Точность 85-90% по сравнению с профессиональными психологами. Система использует методики Фрейда, Юнга и современные подходы к анализу личности.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>Безопасны ли данные кандидатов?</h4>
+                        <i data-feather="plus"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Да, все данные шифруются и хранятся локально в вашей базе данных. Доступ к HR-функциям защищен паролем.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>Можно ли интегрировать с ATS?</h4>
+                        <i data-feather="plus"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Да, в тарифе Корпорат доступно API для интеграции с системами управления кандидатами.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <div class="faq-question">
+                        <h4>Есть ли бесплатная версия?</h4>
+                        <i data-feather="plus"></i>
+                    </div>
+                    <div class="faq-answer">
+                        <p>Да, вы можете попробовать бота бесплатно для личного анализа. HR-функции доступны после покупки тарифа.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta">
+        <div class="container">
+            <div class="cta-content">
+                <h2>🚀 ГОТОВЫ АВТОМАТИЗИРОВАТЬ HR?</h2>
+                <p>Начните экономить время уже сегодня</p>
+                <div class="cta-features">
+                    <div class="cta-feature">
+                        <i data-feather="gift"></i>
+                        <span>Бесплатная демо-версия</span>
+                    </div>
+                    <div class="cta-feature">
+                        <i data-feather="clock"></i>
+                        <span>Настройка за 15 минут</span>
+                    </div>
+                    <div class="cta-feature">
+                        <i data-feather="headphones"></i>
+                        <span>Поддержка 24/7</span>
+                    </div>
+                </div>
+                <div class="cta-buttons">
+                    <a href="https://t.me/YourBotName" class="btn btn-primary btn-large" target="_blank">
+                        <i data-feather="send"></i>
+                        Попробовать бесплатно
+                    </a>
+                    <a href="#contact" class="btn btn-secondary btn-large">
+                        <i data-feather="message-circle"></i>
+                        Связаться с нами
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="contact">
+        <div class="container">
+            <h2 class="section-title">Связаться с нами</h2>
+            <div class="contact-grid">
+                <div class="contact-info">
+                    <h3>Остались вопросы?</h3>
+                    <p>Мы поможем подобрать подходящий тариф и настроить бота под ваши потребности.</p>
+                    <div class="contact-methods">
+                        <div class="contact-method">
+                            <i data-feather="send"></i>
+                            <div>
+                                <h4>Telegram</h4>
+                                <p>@YourSupportBot</p>
+                            </div>
+                        </div>
+                        <div class="contact-method">
+                            <i data-feather="mail"></i>
+                            <div>
+                                <h4>Email</h4>
+                                <p>support@hr-bot.com</p>
+                            </div>
+                        </div>
+                        <div class="contact-method">
+                            <i data-feather="clock"></i>
+                            <div>
+                                <h4>Время работы</h4>
+                                <p>Пн-Пт 9:00-18:00 (МСК)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="contact-form">
+                    <form>
+                        <div class="form-group">
+                            <label for="name">Имя</label>
+                            <input type="text" id="name" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="company">Компания</label>
+                            <input type="text" id="company" name="company">
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email</label>
+                            <input type="email" id="email" name="email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="message">Сообщение</label>
+                            <textarea id="message" name="message" rows="4"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i data-feather="send"></i>
+                            Отправить
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-logo">
+                    <div class="logo">🧠 HR-Bot</div>
+                    <p>Умный помощник для HR-специалистов</p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-section">
+                        <h4>Продукт</h4>
+                        <ul>
+                            <li><a href="#features">Возможности</a></li>
+                            <li><a href="#pricing">Цены</a></li>
+                            <li><a href="#demo">Демо</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Поддержка</h4>
+                        <ul>
+                            <li><a href="#contact">Контакты</a></li>
+                            <li><a href="#faq">FAQ</a></li>
+                            <li><a href="#">Документация</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-section">
+                        <h4>Компания</h4>
+                        <ul>
+                            <li><a href="#">О нас</a></li>
+                            <li><a href="#">Политика конфиденциальности</a></li>
+                            <li><a href="#">Условия использования</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 HR-Bot. Все права защищены.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons@4.28.0/dist/feather.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

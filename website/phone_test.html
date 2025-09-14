@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Автоответчик - Тест</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .status.disconnected {
+            background: #ffebee;
+            color: #c62828;
+            border: 2px solid #ffcdd2;
+        }
+
+        .status.connected {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border: 2px solid #c8e6c9;
+        }
+
+        .status.calling {
+            background: #fff3e0;
+            color: #ef6c00;
+            border: 2px solid #ffcc02;
+        }
+
+        .phone-controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #c0392b;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .chat-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .chat-input input:focus {
+            border-color: #667eea;
+        }
+
+        .chat-input button {
+            background: #667eea;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .chat-input button:hover:not(:disabled) {
+            background: #5a6fd8;
+            transform: scale(1.1);
+        }
+
+        .chat-log {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 15px;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: #e3f2fd;
+            margin-left: 20px;
+            border-bottom-right-radius: 5px;
+        }
+
+        .message.ai {
+            background: #f3e5f5;
+            margin-right: 20px;
+            border-bottom-left-radius: 5px;
+        }
+
+        .message.system {
+            background: #fffde7;
+            text-align: center;
+            font-style: italic;
+            color: #795548;
+        }
+
+        .timestamp {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .caller-info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .caller-info label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .caller-info input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .calling .btn-danger {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📞 AI Автоответчик</h1>
+            <p>Тестирование телефонной системы</p>
+        </div>
+
+        <div id="status" class="status disconnected">
+            🔴 Не подключен к серверу
+        </div>
+
+        <div class="caller-info">
+            <label for="callerIdInput">Номер телефона:</label>
+            <input type="text" id="callerIdInput" value="+7 (900) 123-45-67" placeholder="Введите номер">
+        </div>
+
+        <div class="phone-controls">
+            <button id="connectBtn" class="btn btn-primary">Подключиться</button>
+            <button id="callBtn" class="btn btn-primary" disabled>Начать звонок</button>
+            <button id="hangupBtn" class="btn btn-danger" disabled>Завершить</button>
+        </div>
+
+        <div class="chat-input">
+            <input type="text" id="messageInput" placeholder="Введите сообщение..." disabled>
+            <button id="sendBtn" disabled>📨</button>
+        </div>
+
+        <div id="chatLog" class="chat-log">
+            <div class="message system">
+                Добро пожаловать! Подключитесь к серверу для начала тестирования.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let websocket = null;
+        let isConnected = false;
+        let isInCall = false;
+
+        // Элементы DOM
+        const statusDiv = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const callBtn = document.getElementById('callBtn');
+        const hangupBtn = document.getElementById('hangupBtn');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const chatLog = document.getElementById('chatLog');
+        const callerIdInput = document.getElementById('callerIdInput');
+
+        // Подключение к WebSocket серверу
+        connectBtn.addEventListener('click', () => {
+            if (!isConnected) {
+                connect();
+            } else {
+                disconnect();
+            }
+        });
+
+        // Начало звонка
+        callBtn.addEventListener('click', () => {
+            if (!isInCall) {
+                startCall();
+            }
+        });
+
+        // Завершение звонка
+        hangupBtn.addEventListener('click', () => {
+            if (isInCall) {
+                endCall();
+            }
+        });
+
+        // Отправка сообщения
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function connect() {
+            addMessage('system', 'Подключаемся к серверу...');
+            
+            websocket = new WebSocket('ws://localhost:8765');
+            
+            websocket.onopen = () => {
+                isConnected = true;
+                updateStatus('connected', '🟢 Подключен к серверу');
+                connectBtn.textContent = 'Отключиться';
+                connectBtn.className = 'btn btn-danger';
+                callBtn.disabled = false;
+                addMessage('system', 'Подключение установлено! Можно начинать звонок.');
+            };
+            
+            websocket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleServerMessage(data);
+            };
+            
+            websocket.onclose = () => {
+                isConnected = false;
+                isInCall = false;
+                updateStatus('disconnected', '🔴 Соединение разорвано');
+                connectBtn.textContent = 'Подключиться';
+                connectBtn.className = 'btn btn-primary';
+                callBtn.disabled = true;
+                hangupBtn.disabled = true;
+                messageInput.disabled = true;
+                sendBtn.disabled = true;
+                addMessage('system', 'Соединение закрыто.');
+            };
+            
+            websocket.onerror = (error) => {
+                addMessage('system', '❌ Ошибка подключения. Убедитесь что сервер запущен.');
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function disconnect() {
+            if (websocket) {
+                websocket.close();
+            }
+        }
+
+        function startCall() {
+            const callerId = callerIdInput.value.trim() || '+7 (900) 123-45-67';
+            
+            const message = {
+                type: 'call_start',
+                caller_id: callerId,
+                timestamp: new Date().toISOString()
+            };
+            
+            websocket.send(JSON.stringify(message));
+            
+            isInCall = true;
+            updateStatus('calling', `📞 В разговоре с ${callerId}`);
+            callBtn.disabled = true;
+            hangupBtn.disabled = false;
+            messageInput.disabled = false;
+            sendBtn.disabled = false;
+            messageInput.focus();
+            
+            addMessage('system', `Звонок начат от ${callerId}`);
+        }
+
+        function endCall() {
+            const message = {
+                type: 'call_end',
+                timestamp: new Date().toISOString()
+            };
+            
+            websocket.send(JSON.stringify(message));
+            
+            isInCall = false;
+            updateStatus('connected', '🟢 Подключен к серверу');
+            callBtn.disabled = false;
+            hangupBtn.disabled = true;
+            messageInput.disabled = true;
+            sendBtn.disabled = true;
+            messageInput.value = '';
+        }
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || !isInCall) return;
+            
+            const message = {
+                type: 'text_message',
+                text: text,
+                caller_id: callerIdInput.value.trim(),
+                timestamp: new Date().toISOString()
+            };
+            
+            websocket.send(JSON.stringify(message));
+            addMessage('user', text);
+            messageInput.value = '';
+        }
+
+        function handleServerMessage(data) {
+            switch (data.type) {
+                case 'ai_response':
+                    addMessage('ai', data.text);
+                    break;
+                case 'call_ended':
+                    addMessage('system', `Звонок завершен. ${data.text}`);
+                    if (data.duration) {
+                        addMessage('system', `Длительность: ${data.duration}`);
+                    }
+                    break;
+                case 'error':
+                    addMessage('system', `❌ Ошибка: ${data.message}`);
+                    break;
+                default:
+                    console.log('Unknown message type:', data);
+            }
+        }
+
+        function updateStatus(type, text) {
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = text;
+        }
+
+        function addMessage(type, text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const textDiv = document.createElement('div');
+            textDiv.textContent = text;
+            messageDiv.appendChild(textDiv);
+            
+            const timestampDiv = document.createElement('div');
+            timestampDiv.className = 'timestamp';
+            timestampDiv.textContent = new Date().toLocaleTimeString();
+            messageDiv.appendChild(timestampDiv);
+            
+            chatLog.appendChild(messageDiv);
+            chatLog.scrollTop = chatLog.scrollHeight;
+        }
+
+        // Автоматически фокусируем на input при загрузке
+        window.addEventListener('load', () => {
+            callerIdInput.focus();
+        });
+    </script>
+</body>
+</html>
