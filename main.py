@@ -2043,7 +2043,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📞 **Автоответчик (новое):**
 {voice_status} Голосовые сообщения
-⏳ WebSocket сервер (в разработке)
+✅ WebSocket сервер готов
+✅ Веб-интерфейс для тестирования
 ⏳ Twilio интеграция (планируется)
 
 💼 **HR-функции:**
@@ -2069,7 +2070,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📞 **מענה אוטומטי (חדש):**
 {voice_status} הודעות קוליות
-⏳ שרת WebSocket (בפיתוח)
+✅ שרת WebSocket מוכן
+✅ ממשק אינטרנט לבדיקה
 ⏳ אינטגרציית Twilio (מתוכנן)
 
 💼 **פונקציות HR:**
