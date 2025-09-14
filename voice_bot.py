@@ -118,15 +118,15 @@ class SimpleVoiceHandler:
                 ollama_response = requests.post(
                     "http://localhost:11434/api/generate",
                     json={
-                        "model": "llama2",
+                        "model": "tinyllama:latest",
                         "prompt": self.create_hr_prompt(user_text, user_name),
                         "stream": False,
                         "options": {
                             "temperature": 0.7,
-                            "max_tokens": 200
+                            "num_predict": 100
                         }
                     },
-                    timeout=15
+                    timeout=20
                 )
                 
                 if ollama_response.status_code == 200:
@@ -140,13 +140,12 @@ class SimpleVoiceHandler:
                 logger.warning(f"Ollama недоступен: {e}")
             
             # Fallback на OpenAI если есть ключ
-            if hasattr(self, 'openai_client'):
-                try:
-                    openai_response = await self.get_openai_response(user_text, user_name)
-                    if openai_response:
-                        return self.format_telegram_response(openai_response)
-                except Exception as e:
-                    logger.warning(f"OpenAI недоступен: {e}")
+            try:
+                openai_response = await self.get_openai_response(user_text, user_name)
+                if openai_response:
+                    return self.format_telegram_response(openai_response)
+            except Exception as e:
+                logger.warning(f"OpenAI недоступен: {e}")
             
             # Fallback на улучшенный локальный AI
             return await self.generate_simple_response(user_text, user_name)
@@ -187,18 +186,23 @@ class SimpleVoiceHandler:
     async def get_openai_response(self, user_text: str, user_name: str) -> str:
         """Получение ответа от OpenAI API"""
         try:
-            import openai
             import os
+            import requests
+            import json
             
             api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key or api_key == "dummy_key_for_testing":
+            if not api_key or api_key == "dummy_key_for_testing" or not api_key.startswith('sk-'):
+                logger.warning(f"OpenAI API ключ некорректный: {api_key[:10] if api_key else 'None'}...")
                 return None
                 
-            openai.api_key = api_key
+            headers = {
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json'
+            }
             
-            response = await openai.ChatCompletion.acreate(
-                model="gpt-3.5-turbo",
-                messages=[
+            data = {
+                "model": "gpt-3.5-turbo",
+                "messages": [
                     {
                         "role": "system", 
                         "content": f"Ты HR-консультант Анна. Пользователь {user_name} отправил голосовое сообщение. Дай краткую профессиональную консультацию по карьере (2-3 предложения)."
@@ -208,11 +212,25 @@ class SimpleVoiceHandler:
                         "content": user_text
                     }
                 ],
-                max_tokens=150,
-                temperature=0.7
+                "max_tokens": 150,
+                "temperature": 0.7
+            }
+            
+            response = requests.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers=headers,
+                json=data,
+                timeout=30
             )
             
-            return response.choices[0].message.content.strip()
+            if response.status_code == 200:
+                result = response.json()
+                ai_text = result['choices'][0]['message']['content'].strip()
+                logger.info(f"✅ OpenAI ответ для {user_name}: {ai_text[:50]}...")
+                return ai_text
+            else:
+                logger.error(f"OpenAI API ошибка {response.status_code}: {response.text}")
+                return None
             
         except Exception as e:
             logger.error(f"Ошибка OpenAI: {e}")

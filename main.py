@@ -2111,7 +2111,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 **Commands:** /start /help /phone /hr_panel /status"""
     }
     
-    await update.message.reply_text(status_text[user_lang], parse_mode=ParseMode.MARKDOWN)
+    # Отправляем без Markdown из-за потенциальных ошибок парсинга
+    await update.message.reply_text(status_text[user_lang], parse_mode=None)
 
 async def setup_bot_commands(application):
     """Настройка команд бота"""
