@@ -2135,6 +2135,9 @@ def main():
         states={
             Q1: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
+                CommandHandler('cancel', cancel),
+                CommandHandler('phone', phone_mode_command),
+                CommandHandler('status', status_command),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$"),
                 CallbackQueryHandler(start_survey_callback, pattern="start_survey"),
                 CallbackQueryHandler(express_analysis_callback, pattern="express_analysis"),
@@ -2142,26 +2145,32 @@ def main():
             ],
             Q2: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
+                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q3: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
+                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q4: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
+                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q5: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
+                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q6: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
+                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q7: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
+                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
         },
