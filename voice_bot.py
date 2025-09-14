@@ -1,227 +1,132 @@
 #!/usr/bin/env python3
 """
-Расширение для main.py: добавляет обработку голосовых сообщений
-Интегрируется с TinyLlama автоответчиком
+Упрощенная версия голосового обработчика без сложных зависимостей
+Для деплоя на Railway
 """
 import logging
-import os
-import requests
 import tempfile
-import subprocess
+import os
 from telegram import Update
-from telegram.ext import ContextTypes, MessageHandler, filters
-
-# Импортируем наш AI автоответчик
-import sys
-sys.path.append('.')
+from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
-class VoiceHandler:
+class SimpleVoiceHandler:
     def __init__(self):
-        self.ai_server_url = "http://localhost:8765"  # WebSocket сервер
-        self.simple_api_url = "http://localhost:8001"  # Простой API
-        self.ollama_path = r'C:\Users\mihae\AppData\Local\Programs\Ollama\ollama.exe'
+        logger.info("🎤 Инициализация упрощенного голосового обработчика")
         
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка голосовых сообщений"""
+        """Упрощенная обработка голосовых сообщений"""
         user = update.effective_user
         voice = update.message.voice
         
-        logger.info(f"📢 Получено голосовое сообщение от {user.first_name} (ID: {user.id})")
+        logger.info(f"📢 Голосовое сообщение от {user.first_name} (ID: {user.id})")
         
         # Уведомляем пользователя
         status_msg = await update.message.reply_text("🎤 Обрабатываю голосовое сообщение...")
         
         try:
-            # Скачиваем голосовое сообщение
-            voice_file = await context.bot.get_file(voice.file_id)
+            # Симулируем обработку
+            duration = voice.duration if voice.duration else 5
             
-            # Создаем временный файл
-            with tempfile.NamedTemporaryFile(suffix=".oga", delete=False) as tmp_file:
-                await voice_file.download_to_drive(tmp_file.name)
-                voice_path = tmp_file.name
+            # Простая симуляция распознавания на основе длительности
+            if duration < 3:
+                recognized_text = "Привет!"
+            elif duration < 7:
+                recognized_text = "Как дела? Что у тебя нового?"
+            elif duration < 15:
+                recognized_text = "Расскажи подробнее о своих планах и что тебя беспокоит"
+            else:
+                recognized_text = "Это было длинное сообщение с множеством деталей и вопросов"
             
-            # Конвертируем в WAV (если нужно)
-            wav_path = voice_path.replace(".oga", ".wav")
-            try:
-                # Используем ffmpeg для конвертации (если установлен)
-                subprocess.run([
-                    'ffmpeg', '-i', voice_path, '-ar', '16000', '-ac', '1', wav_path
-                ], check=True, capture_output=True)
-                audio_path = wav_path
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                # Если ffmpeg недоступен, используем исходный файл
-                audio_path = voice_path
-            
-            # Симулируем распознавание речи (заглушка)
-            recognized_text = await self.simulate_speech_recognition(audio_path)
-            
-            await status_msg.edit_text(f"🎤 Распознано: \"{recognized_text}\"\n\n🤖 AI обрабатывает...")
-            
-            # Отправляем в AI для обработки
-            ai_response = await self.get_ai_response(recognized_text, user.id)
+            # Простой AI ответ
+            ai_response = await self.generate_simple_response(recognized_text, user.first_name)
             
             # Отвечаем пользователю
             await status_msg.edit_text(
                 f"🎤 **Ваше сообщение:** {recognized_text}\n\n"
-                f"🤖 **AI ответ:** {ai_response}"
+                f"🤖 **AI ответ:** {ai_response}\n\n"
+                f"⏱️ **Длительность:** {duration} сек.\n"
+                f"💡 *Это симуляция - для полной версии нужны дополнительные API*"
             )
-            
-            # Генерируем голосовой ответ (если возможно)
-            try:
-                voice_response = await self.generate_voice_response(ai_response)
-                if voice_response:
-                    await update.message.reply_voice(voice_response)
-            except Exception as e:
-                logger.warning(f"Не удалось создать голосовой ответ: {e}")
             
         except Exception as e:
             logger.error(f"Ошибка обработки голосового сообщения: {e}")
             await status_msg.edit_text(
-                "❌ Извините, не удалось обработать голосовое сообщение. "
-                "Попробуйте отправить текстом."
+                "❌ Извините, не удалось обработать голосовое сообщение.\n\n"
+                "🎤 Попробуйте еще раз или отправьте текстом.\n\n"
+                "💡 Для полной поддержки голоса требуется настройка дополнительных сервисов."
             )
-        finally:
-            # Удаляем временные файлы
-            try:
-                if 'voice_path' in locals():
-                    os.unlink(voice_path)
-                if 'wav_path' in locals() and os.path.exists(wav_path):
-                    os.unlink(wav_path)
-            except:
-                pass
     
-    async def simulate_speech_recognition(self, audio_path):
-        """Симуляция распознавания речи"""
-        # Список возможных фраз для симуляции
-        sample_phrases = [
-            "Привет, как дела?",
-            "Что ты умеешь делать?",
-            "Расскажи о себе",
-            "Как тебя зовут?",
-            "Какая сегодня погода?",
-            "Помоги мне с выбором профессии",
-            "Проведи анализ личности",
-            "Спасибо за помощь",
-            "До свидания"
-        ]
+    async def generate_simple_response(self, text, user_name):
+        """Генерация простого ответа без внешних AI сервисов"""
+        text_lower = text.lower()
         
-        # Определяем фразу по размеру файла (простая симуляция)
-        try:
-            file_size = os.path.getsize(audio_path)
-            phrase_index = file_size % len(sample_phrases)
-            return sample_phrases[phrase_index]
-        except:
-            return "Пользователь что-то сказал"
-    
-    async def get_ai_response(self, text, user_id):
-        """Получение ответа от AI автоответчика"""
-        try:
-            # Пробуем простой API
-            response = requests.post(
-                f"{self.simple_api_url}/chat",
-                json={"message": text, "caller_id": str(user_id)},
-                timeout=15
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("response", "Спасибо за сообщение!")
-            else:
-                raise Exception(f"API error: {response.status_code}")
-                
-        except Exception as e:
-            logger.warning(f"Ошибка API: {e}, используем прямой вызов Ollama")
-            
-            # Прямой вызов TinyLlama
-            try:
-                prompt = f"Ответь кратко как дружелюбный помощник: {text}"
-                result = subprocess.run([
-                    self.ollama_path, 'run', 'tinyllama', prompt
-                ], capture_output=True, text=True, timeout=10, encoding='utf-8', errors='ignore')
-                
-                if result.returncode == 0:
-                    response = result.stdout.strip()
-                    # Ограничиваем ответ
-                    if len(response) > 200:
-                        response = response[:200] + "..."
-                    return response if response else "Понял вас!"
-                else:
-                    return "Извините, сейчас не могу ответить. Попробуйте текстом."
-                    
-            except Exception as e2:
-                logger.error(f"Ошибка Ollama: {e2}")
-                return "Спасибо за голосовое сообщение! Попробуйте написать текстом."
-    
-    async def generate_voice_response(self, text):
-        """Генерация голосового ответа"""
-        try:
-            # Проверяем доступность espeak
-            result = subprocess.run(['espeak', '--version'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode != 0:
-                return None
-            
-            # Создаем временный файл для аудио
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
-                wav_path = tmp_file.name
-            
-            # Используем espeak для синтеза речи
-            subprocess.run([
-                'espeak', 
-                '-s', '150',      # скорость
-                '-v', 'ru',       # русский голос
-                '-w', wav_path,   # выходной файл
-                text[:100]        # ограничиваем длину
-            ], check=True, timeout=10)
-            
-            # Читаем и возвращаем аудио
-            with open(wav_path, 'rb') as f:
-                audio_data = f.read()
-            
-            # Удаляем временный файл
-            os.unlink(wav_path)
-            
-            return audio_data
-            
-        except Exception as e:
-            logger.warning(f"Ошибка генерации голоса: {e}")
-            return None
+        if any(word in text_lower for word in ['привет', 'hello', 'hi']):
+            return f"Привет, {user_name}! Рад вас слышать! Как дела?"
+        elif any(word in text_lower for word in ['дела', 'how are you']):
+            return "У меня все отлично! Работаю как AI автоответчик. А у вас как дела?"
+        elif any(word in text_lower for word in ['планы', 'plans', 'что делать']):
+            return "Звучит интересно! Расскажите подробнее о ваших планах."
+        elif any(word in text_lower for word in ['проблема', 'беспокоит', 'trouble']):
+            return "Понимаю ваше беспокойство. Я здесь, чтобы выслушать и помочь."
+        elif any(word in text_lower for word in ['работа', 'work', 'job']):
+            return "Работа важная тема! Что именно вас интересует в профессиональной сфере?"
+        elif len(text) > 50:
+            return "Спасибо за подробный рассказ! Я внимательно выслушал и готов обсудить детали."
+        else:
+            return f"Интересно! Получил ваше сообщение. Готов продолжить разговор, {user_name}!"
+
+    async def handle_video_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка круглых видео-сообщений"""
+        user = update.effective_user
+        video_note = update.message.video_note
+        
+        logger.info(f"🎥 Видео-сообщение от {user.first_name} (ID: {user.id})")
+        
+        duration = video_note.duration if video_note.duration else 0
+        
+        await update.message.reply_text(
+            f"🎥 **Получил видео-сообщение!**\n\n"
+            f"⏱️ Длительность: {duration} сек.\n"
+            f"👤 От: {user.first_name}\n\n"
+            f"🤖 В текущей версии я обрабатываю только голосовые сообщения.\n"
+            f"📱 Попробуйте отправить голосовое сообщение или напишите текстом!\n\n"
+            f"💡 *Обработка видео будет добавлена в следующих версиях*"
+        )
 
 # Глобальный экземпляр обработчика
-voice_handler = VoiceHandler()
+voice_handler = SimpleVoiceHandler()
 
-# Функция для добавления в main.py
+# Функции для экспорта в main.py
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик голосовых сообщений для интеграции в main.py"""
     await voice_handler.handle_voice_message(update, context)
 
-# Обработчик для видео-сообщений (круглые видео)
 async def handle_video_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка круглых видео-сообщений"""
-    user = update.effective_user
-    await update.message.reply_text(
-        f"🎥 {user.first_name}, я пока не умею обрабатывать видео-сообщения. "
-        "Отправьте голосовое сообщение или напишите текстом!"
-    )
+    """Обработчик видео-сообщений для интеграции в main.py"""
+    await voice_handler.handle_video_note(update, context)
 
-# Тестовая функция
+# Функция тестирования
 async def test_voice_system():
     """Тестирование голосовой системы"""
-    handler = VoiceHandler()
+    print("🧪 Тестирование упрощенной голосовой системы...")
     
-    # Тест AI ответа
-    test_text = "Привет, как дела?"
-    response = await handler.get_ai_response(test_text, 12345)
-    print(f"Тест AI: '{test_text}' -> '{response}'")
+    handler = SimpleVoiceHandler()
     
-    # Тест генерации голоса
-    voice_data = await handler.generate_voice_response("Привет! Как дела?")
-    if voice_data:
-        print(f"Голосовой ответ сгенерирован: {len(voice_data)} байт")
-    else:
-        print("Голосовой ответ не сгенерирован")
+    # Тест генерации ответов
+    test_phrases = [
+        "Привет, как дела?",
+        "Что у меня с планами на работе",
+        "У меня проблемы с проектом",
+        "Длинное сообщение с множеством деталей о том что происходит в жизни"
+    ]
+    
+    for phrase in test_phrases:
+        response = await handler.generate_simple_response(phrase, "Тестер")
+        print(f"📝 '{phrase}' -> '{response}'")
+    
+    print("✅ Тестирование завершено")
 
 if __name__ == "__main__":
     import asyncio

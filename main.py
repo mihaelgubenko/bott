@@ -14,9 +14,9 @@ from telegram.ext import (
 try:
     from voice_bot import handle_voice, handle_video_note
     VOICE_ENABLED = True
-    logger.info("✅ Голосовые функции подключены")
+    print("✅ Голосовые функции подключены")
 except ImportError as e:
-    logger.warning(f"⚠️ Голосовые функции недоступны: {e}")
+    print(f"⚠️ Голосовые функции недоступны: {e}")
     VOICE_ENABLED = False
 import openai
 from telegram.constants import ParseMode
@@ -1956,12 +1956,169 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     secure_cleanup_user_data(user.id, context)
     return ConversationHandler.END
 
+async def phone_mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /phone - режим телефонного автоответчика"""
+    user = update.effective_user
+    user_lang = context.user_data.get('language', 'ru')
+    
+    phone_text = {
+        'ru': """📞 **Режим телефонного автоответчика**
+
+🎯 **Что это:**
+• Тестирование функций для телефонных звонков
+• Обработка голосовых сообщений
+• Интеграция с AI для ответов
+
+🧪 **Как тестировать:**
+1. Отправьте голосовое сообщение
+2. Получите AI-ответ (симуляция телефонного разговора)
+3. Попробуйте разные типы вопросов
+
+📱 **Статус интеграции:**
+• Telegram голосовые: ✅ Работает
+• WebSocket сервер: ⏳ В разработке  
+• Twilio интеграция: ⏳ Планируется
+
+Для возврата к психоанализу: /start""",
+        
+        'he': """📞 **מצב מענה טלפוני אוטומטי**
+
+🎯 **מה זה:**
+• בדיקת פונקציות לשיחות טלפון
+• עיבוד הודעות קוליות  
+• אינטגרציה עם AI למענה
+
+🧪 **איך לבדוק:**
+1. שלחו הודעה קולית
+2. קבלו תשובת AI (סימולציה של שיחה טלפונית)
+3. נסו סוגים שונים של שאלות
+
+📱 **סטטוס אינטגרציה:**
+• הודעות קוליות Telegram: ✅ עובד
+• שרת WebSocket: ⏳ בפיתוח
+• אינטגרציית Twilio: ⏳ מתוכנן
+
+לחזרה לפסיכואנליזה: /start""",
+        
+        'en': """📞 **Phone Auto-responder Mode**
+
+🎯 **What is this:**
+• Testing functions for phone calls
+• Voice message processing
+• AI integration for responses
+
+🧪 **How to test:**
+1. Send a voice message
+2. Get AI response (phone conversation simulation)
+3. Try different types of questions
+
+📱 **Integration status:**
+• Telegram voice: ✅ Working
+• WebSocket server: ⏳ In development
+• Twilio integration: ⏳ Planned
+
+To return to psychoanalysis: /start"""
+    }
+    
+    await update.message.reply_text(phone_text[user_lang], parse_mode=ParseMode.MARKDOWN)
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда /status - статус всех систем"""
+    user_lang = context.user_data.get('language', 'ru')
+    
+    # Проверяем голосовые функции
+    voice_status = "✅ Подключены" if VOICE_ENABLED else "⚠️ Отключены"
+    
+    status_text = {
+        'ru': f"""📊 **Статус системы HR-Психоаналитика + Автоответчик**
+
+🧠 **Психоанализ (основная функция):**
+✅ 7-вопросный опрос
+✅ Экспресс-анализ из диалога
+✅ GPT-4 анализ личности
+✅ HR-оценки кандидатов
+✅ Многоязычность (ru/he/en)
+
+📞 **Автоответчик (новое):**
+{voice_status} Голосовые сообщения
+⏳ WebSocket сервер (в разработке)
+⏳ Twilio интеграция (планируется)
+
+💼 **HR-функции:**
+✅ База данных кандидатов
+✅ HR-панель для специалистов
+✅ Сравнение кандидатов
+
+🔧 **Системные функции:**
+✅ Railway деплой
+✅ Многопользовательский режим
+✅ Безопасность данных
+
+**Команды:** /start /help /phone /hr_panel /status""",
+        
+        'he': f"""📊 **סטטוס מערכת HR-פסיכואנליטיקאי + מענה אוטומטי**
+
+🧠 **פסיכואנליזה (פונקציה עיקרית):**
+✅ סקר של 7 שאלות
+✅ ניתוח מהיר מהשיחה
+✅ ניתוח אישיות GPT-4
+✅ הערכות HR של מועמדים
+✅ רב-לשוניות (ru/he/en)
+
+📞 **מענה אוטומטי (חדש):**
+{voice_status} הודעות קוליות
+⏳ שרת WebSocket (בפיתוח)
+⏳ אינטגרציית Twilio (מתוכנן)
+
+💼 **פונקציות HR:**
+✅ בסיס נתונים מועמדים
+✅ פאנל HR למומחים
+✅ השוואת מועמדים
+
+🔧 **פונקציות מערכת:**
+✅ פריסת Railway
+✅ מצב רב-משתמשים
+✅ אבטחת נתונים
+
+**פקודות:** /start /help /phone /hr_panel /status""",
+        
+        'en': f"""📊 **HR-Psychoanalyst + Auto-responder System Status**
+
+🧠 **Psychoanalysis (main function):**
+✅ 7-question survey
+✅ Express analysis from dialog
+✅ GPT-4 personality analysis
+✅ HR candidate evaluations
+✅ Multilingual (ru/he/en)
+
+📞 **Auto-responder (new):**
+{voice_status} Voice messages
+⏳ WebSocket server (in development)
+⏳ Twilio integration (planned)
+
+💼 **HR functions:**
+✅ Candidate database
+✅ HR panel for specialists
+✅ Candidate comparison
+
+🔧 **System functions:**
+✅ Railway deployment
+✅ Multi-user mode
+✅ Data security
+
+**Commands:** /start /help /phone /hr_panel /status"""
+    }
+    
+    await update.message.reply_text(status_text[user_lang], parse_mode=ParseMode.MARKDOWN)
+
 async def setup_bot_commands(application):
     """Настройка команд бота"""
     commands = [
-        BotCommand("start", "Начать психологический анализ"),
-        BotCommand("help", "Справка о возможностях бота"),
-        BotCommand("cancel", "Отменить текущий опрос")
+        BotCommand("start", "🧠 Психологический анализ + HR"),
+        BotCommand("help", "📋 Справка о возможностях"),
+        BotCommand("phone", "📞 Режим автоответчика"),
+        BotCommand("status", "📊 Статус всех систем"),
+        BotCommand("cancel", "❌ Отменить опрос")
     ]
     await application.bot.set_my_commands(commands)
 
@@ -2014,6 +2171,8 @@ def main():
     
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler('phone', phone_mode_command))
+    application.add_handler(CommandHandler('status', status_command))
     application.add_handler(CommandHandler('hr_panel', hr_panel_command))
     application.add_handler(CommandHandler('hr_compare', hr_compare_command))
     
