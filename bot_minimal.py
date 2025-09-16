@@ -75,8 +75,10 @@ QUESTIONS_RU = QUESTIONS['ru']  # Backward compatibility
 # Language detection
 def detect_language(text: str) -> str:
     """Определяет язык текста по символам"""
-    if not text:
+    if not text or text.strip() in ['/start', '/help', '/cancel']:
         return 'ru'
+    
+    text = text.strip()
     
     # Проверяем наличие ивритских символов
     if any('\u0590' <= char <= '\u05FF' for char in text):
@@ -86,8 +88,13 @@ def detect_language(text: str) -> str:
     if any('\u0400' <= char <= '\u04FF' for char in text):
         return 'ru'
     
-    # По умолчанию английский
-    return 'en'
+    # Проверяем английские слова
+    english_words = ['hello', 'hi', 'start', 'help', 'test', 'analysis', 'career', 'psychology']
+    if any(word in text.lower() for word in english_words):
+        return 'en'
+    
+    # По умолчанию русский для коротких сообщений
+    return 'ru'
 
 # Multilingual texts
 TEXTS = {
@@ -401,11 +408,8 @@ async def process_express_analysis(update: Update, context: ContextTypes.DEFAULT
 
 
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, language: str = 'ru') -> None:
-    text = (
-        f"{TEXTS[language]['greet']}\n"
-        f"• {TEXTS[language]['buttons']['express']} — быстро по диалогу\n"
-        f"• {TEXTS[language]['buttons']['full_test']} — 7 вопросов с глубоким профилем\n"
-    )
+    text = TEXTS[language]['greet']
+    
     if update.message:
         await update.message.reply_text(text, reply_markup=get_start_keyboard(language), parse_mode=ParseMode.MARKDOWN)
     else:
@@ -418,9 +422,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_answers.pop(user.id, None)
     conversation_history.pop(user.id, None)
     
-    # Определяем язык по первому сообщению
-    text = update.message.text if update.message else ""
-    language = detect_language(text)
+    # Для команды /start всегда используем русский по умолчанию
+    # Язык определится при первом текстовом сообщении
+    language = 'ru'
     context.user_data['language'] = language
     
     await show_main_menu(update, context, language)
@@ -772,8 +776,7 @@ def main() -> None:
     
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Commands
-    application.add_handler(CommandHandler("start", start))
+    # Commands (кроме start - он в ConversationHandler)
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("hr_panel", hr_panel_command))
@@ -803,7 +806,7 @@ def main() -> None:
     )
     application.add_handler(conv)
 
-    # Out of conversation generic messages
+    # Out of conversation generic messages (только если не в ConversationHandler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_general_message))
 
     logger.info("Бот запущен (расширенный RU)")
