@@ -115,7 +115,8 @@ def analyze_speech_patterns(text: str) -> dict:
         'cancellation': False,
         'provocative': False,
         'topic_change': False,
-        'self_introduction_request': False
+        'self_introduction_request': False,
+        'dream_expression': False
     }
     
     # Психологическая помощь
@@ -144,12 +145,17 @@ def analyze_speech_patterns(text: str) -> dict:
         patterns['topic_change'] = True
     
     # Запрос рассказать о себе
-    self_intro_keywords = ['расскажи о себе', 'расскажи о тебе', 'кто ты', 'что ты', 'как ты работаешь', 'твоя история', 'твоя работа']
+    self_intro_keywords = ['расскажи о себе', 'расскажи о тебе', 'кто ты', 'что ты', 'как ты работаешь', 'твоя история', 'твоя работа', 'что ты умеешь', 'что умеешь']
     if any(keyword in text_lower for keyword in self_intro_keywords):
         patterns['self_introduction_request'] = True
     
-    # Провокационные вопросы
-    provocative_keywords = ['глупый', 'тупой', 'бесполезный', 'не понимаешь', 'не слушаешь', 'плохой', 'ужасный', 'ненавижу', 'ненавидишь']
+    # Мечты и цели
+    dream_keywords = ['хочу стать', 'мечтаю', 'мечта', 'цель', 'планирую', 'буду', 'стану']
+    if any(keyword in text_lower for keyword in dream_keywords):
+        patterns['dream_expression'] = True
+    
+    # Провокационные вопросы и непонимание
+    provocative_keywords = ['глупый', 'тупой', 'бесполезный', 'не понимаешь', 'не слушаешь', 'плохой', 'ужасный', 'ненавижу', 'ненавидишь', 'не понял', 'не поняла', 'не понимаешь меня']
     if any(keyword in text_lower for keyword in provocative_keywords):
         patterns['provocative'] = True
     
@@ -423,6 +429,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return WAITING_MESSAGE
     
+    # Handle dream expression
+    if patterns['dream_expression']:
+        await update.message.reply_text(
+            "🌟 Какая замечательная мечта! Это очень вдохновляюще. "
+            "Расскажите, что именно вас привлекает в этом? "
+            "Что вас мотивирует идти к этой цели? 😊"
+        )
+        return WAITING_MESSAGE
+    
     # Handle self introduction request
     if patterns['self_introduction_request']:
         await update.message.reply_text(
@@ -433,13 +448,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return WAITING_MESSAGE
     
-    # Handle provocative questions
+    # Handle provocative questions and misunderstanding
     if patterns['provocative']:
-        await update.message.reply_text(
-            "Понимаю, что вы расстроены. Я здесь, чтобы помочь, а не навредить. "
-            "Если что-то не так в моих ответах, дайте знать - я постараюсь лучше понять вас. "
-            "Что именно вас беспокоит? 💙"
-        )
+        if 'не понял' in text.lower() or 'не поняла' in text.lower() or 'не понимаешь' in text.lower():
+            await update.message.reply_text(
+                "Извините, я действительно не понял вас правильно. "
+                "Давайте попробуем еще раз - расскажите мне, что именно вы имели в виду? "
+                "Я внимательно выслушаю и постараюсь лучше понять. 💙"
+            )
+        else:
+            await update.message.reply_text(
+                "Понимаю, что вы расстроены. Я здесь, чтобы помочь, а не навредить. "
+                "Если что-то не так в моих ответах, дайте знать - я постараюсь лучше понять вас. "
+                "Что именно вас беспокоит? 💙"
+            )
         return WAITING_MESSAGE
     
     # Check for full analysis request
@@ -544,7 +566,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     conversation_text = " ".join(conversation_history[user.id][-5:])  # Last 5 messages
     
     # Determine primary role based on patterns
-    if patterns['career_need'] and not patterns['psychology_need']:
+    if patterns['dream_expression']:
+        primary_role = "ВДОХНОВЛЯЮЩИЙ КОНСУЛЬТАНТ"
+        focus = "поддержка мечтаний и мотивация к достижению целей"
+    elif patterns['career_need'] and not patterns['psychology_need']:
         primary_role = "HR-СПЕЦИАЛИСТ"
         focus = "карьерные рекомендации и профессиональное развитие"
     elif patterns['psychology_need'] or patterns['emotional_support']:
