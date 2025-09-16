@@ -140,59 +140,15 @@ class SimpleVoiceHandler:
             return random.choice(responses)
 
     async def get_ai_consultation(self, user_text: str, user_name: str, user_id: int) -> str:
-        """Получение AI консультации через интегрированную телефонную систему"""
+        """Получение AI консультации через OpenAI API"""
         try:
-            import requests
-            import json
-            import os
-            from datetime import datetime
+            # Используем только OpenAI
+            openai_response = await self.get_openai_response(user_text, user_name)
+            if openai_response:
+                return self.format_telegram_response(openai_response)
             
-            # Приоритет OpenAI для Railway (облачный деплой)
-            railway_env = os.getenv('RAILWAY_ENVIRONMENT')
-            if railway_env:
-                logger.info("🚀 Railway среда: используем OpenAI API")
-                try:
-                    openai_response = await self.get_openai_response(user_text, user_name)
-                    if openai_response:
-                        return self.format_telegram_response(openai_response)
-                except Exception as e:
-                    logger.warning(f"OpenAI недоступен в Railway: {e}")
-            
-            # Для локальной разработки - пробуем Ollama
-            try:
-                ollama_response = requests.post(
-                    "http://localhost:11434/api/generate",
-                    json={
-                        "model": "tinyllama:latest",
-                        "prompt": self.create_hr_prompt(user_text, user_name),
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": 100
-                        }
-                    },
-                    timeout=10  # Уменьшили timeout для Railway
-                )
-                
-                if ollama_response.status_code == 200:
-                    result = ollama_response.json()
-                    ai_text = result.get('response', '').strip()
-                    if ai_text:
-                        logger.info(f"✅ Ollama ответ для {user_name}: {ai_text[:50]}...")
-                        return self.format_telegram_response(ai_text)
-                        
-            except Exception as e:
-                logger.warning(f"Ollama недоступен: {e}")
-            
-            # Fallback на OpenAI если Ollama не работает
-            try:
-                openai_response = await self.get_openai_response(user_text, user_name)
-                if openai_response:
-                    return self.format_telegram_response(openai_response)
-            except Exception as e:
-                logger.warning(f"OpenAI недоступен: {e}")
-            
-            # Финальный fallback на локальный AI
+            # Финальный fallback на локальный AI, если OpenAI не сработает
+            logger.warning("OpenAI не сработал, используется локальный AI.")
             return await self.generate_simple_response(user_text, user_name)
             
         except Exception as e:
@@ -229,56 +185,47 @@ class SimpleVoiceHandler:
         return formatted_response
 
     async def get_openai_response(self, user_text: str, user_name: str) -> str:
-        """Получение ответа от OpenAI API"""
+        """Получение ответа от OpenAI API с использованием официальной библиотеки"""
         try:
+            import openai
             import os
-            import requests
-            import json
             
             api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key or api_key == "dummy_key_for_testing" or not api_key.startswith('sk-'):
-                logger.warning(f"OpenAI API ключ некорректный: {api_key[:10] if api_key else 'None'}...")
+            if not api_key or not api_key.startswith('sk-'):
+                logger.warning(f"OpenAI API ключ некорректный или отсутствует.")
                 return None
-                
-            headers = {
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json'
-            }
+
+            client = openai.AsyncOpenAI(api_key=api_key)
             
-            data = {
-                "model": "gpt-3.5-turbo",
-                "messages": [
+            response = await client.chat.completions.create(
+                model="gpt-4",
+                messages=[
                     {
                         "role": "system", 
-                        "content": f"Ты HR-консультант Анна. Пользователь {user_name} отправил голосовое сообщение. Дай краткую профессиональную консультацию по карьере (2-3 предложения)."
+                        "content": self.create_hr_prompt(user_text, user_name)
                     },
                     {
                         "role": "user", 
                         "content": user_text
                     }
                 ],
-                "max_tokens": 150,
-                "temperature": 0.7
-            }
-            
-            response = requests.post(
-                'https://api.openai.com/v1/chat/completions',
-                headers=headers,
-                json=data,
+                max_tokens=200,
+                temperature=0.7,
                 timeout=30
             )
             
-            if response.status_code == 200:
-                result = response.json()
-                ai_text = result['choices'][0]['message']['content'].strip()
-                logger.info(f"✅ OpenAI ответ для {user_name}: {ai_text[:50]}...")
-                return ai_text
-            else:
-                logger.error(f"OpenAI API ошибка {response.status_code}: {response.text}")
-                return None
+            ai_text = response.choices[0].message.content.strip()
+            logger.info(f"✅ OpenAI ответ для {user_name}: {ai_text[:50]}...")
+            return ai_text
             
+        except openai.AuthenticationError:
+            logger.error("Ошибка аутентификации OpenAI: неверный API ключ.")
+            return None
+        except openai.RateLimitError:
+            logger.error("Ошибка OpenAI: превышен лимит запросов.")
+            return None
         except Exception as e:
-            logger.error(f"Ошибка OpenAI: {e}")
+            logger.error(f"Неожиданная ошибка OpenAI: {e}")
             return None
 
     async def handle_video_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

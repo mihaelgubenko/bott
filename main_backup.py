@@ -14,9 +14,9 @@ from telegram.ext import (
 try:
     from voice_bot import handle_voice, handle_video_note
     VOICE_ENABLED = True
-    print("✅ Голосовые функции подключены")
+    logger.info("✅ Голосовые функции подключены")
 except ImportError as e:
-    print(f"⚠️ Голосовые функции недоступны: {e}")
+    logger.warning(f"⚠️ Голосовые функции недоступны: {e}")
     VOICE_ENABLED = False
 import openai
 from telegram.constants import ParseMode
@@ -467,9 +467,28 @@ Write `/start` to begin personality analysis and career guidance.
     }
     return messages.get(language, messages['ru'])
 
-def detect_language(text: str) -> str:
-    """Определяет язык текста (теперь всегда возвращает 'ru')"""
-    return 'ru'
+def detect_language(text):
+    """Определение языка по тексту"""
+    # Считаем количество символов каждого языка
+    russian_chars = len(re.findall(r'[а-яё]', text.lower()))
+    hebrew_chars = len(re.findall(r'[א-ת]', text))
+    english_chars = len(re.findall(r'[a-z]', text.lower()))
+    
+    total_letters = russian_chars + hebrew_chars + english_chars
+    
+    # Если слишком мало букв, возвращаем русский по умолчанию
+    if total_letters < 5:
+        return 'ru'
+    
+    # Определяем язык по преобладающим символам
+    if russian_chars > max(hebrew_chars, english_chars):
+        return 'ru'
+    elif hebrew_chars > max(russian_chars, english_chars):
+        return 'he'
+    elif english_chars > max(russian_chars, hebrew_chars):
+        return 'en'
+    else:
+        return 'ru'  # По умолчанию русский
 
 def is_valid_answer(text, min_words=3):
     """Проверка валидности ответа"""
@@ -588,7 +607,7 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
     """Обработка обычных сообщений вне опроса"""
     user = update.effective_user
     user_message = update.message.text
-    user_lang = 'ru'
+    user_lang = context.user_data.get('language', detect_language(user_message))
     
     # Сохраняем определенный язык
     context.user_data['language'] = user_lang
@@ -843,13 +862,48 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_data.pop(user.id, None)
     context.user_data.clear()
     
-    # Устанавливаем язык по умолчанию
-    context.user_data['language'] = 'ru'
+    # Устанавливаем русский по умолчанию
+    user_lang = 'ru'
+    context.user_data['language'] = user_lang
+    context.user_data['state'] = 0
+    context.user_data['language_detected'] = False
+    context.user_data['survey_started'] = False
     
-    logger.info(f"Пользователь {user.first_name} ({user.id}) начал сессию. Язык: ru")
-
-    # Сразу показываем главное меню
-    await show_main_menu(update, context)
+    # Инициализируем данные пользователя
+    user_data[user.id] = {'answers': [None] * 7, 'language': user_lang}
+    
+    # Отправляем приветствие с двумя кнопками
+    button_texts = {
+        'ru': {
+            'express': '⚡ Экспресс-анализ из диалога',
+            'full': '📋 Полный опрос (7 вопросов)'
+        },
+        'he': {
+            'express': '⚡ ניתוח מהיר מהשיחה',
+            'full': '📋 סקר מלא (7 שאלות)'
+        },
+        'en': {
+            'express': '⚡ Express analysis from chat',
+            'full': '📋 Full survey (7 questions)'
+        }
+    }
+    
+    # Защита от неизвестных языков
+    if user_lang not in button_texts:
+        user_lang = 'ru'
+    
+    keyboard = [
+        [InlineKeyboardButton(button_texts[user_lang]['express'], callback_data="express_analysis")],
+        [InlineKeyboardButton(button_texts[user_lang]['full'], callback_data="start_survey")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        GREETINGS[user_lang],
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
+    )
+    
     return Q1
 
 async def continue_chat_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1902,174 +1956,12 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     secure_cleanup_user_data(user.id, context)
     return ConversationHandler.END
 
-async def phone_mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /phone - режим телефонного автоответчика"""
-    user = update.effective_user
-    user_lang = context.user_data.get('language', 'ru')
-    
-    phone_text = {
-        'ru': """📞 **Интегрированная телефонная система**
-
-🎤 **Голосовые консультации прямо в Telegram:**
-• Отправьте голосовое сообщение боту
-• AI даст профессиональную консультацию по карьере  
-• Ответ придет текстом в этом же чате
-• Работает как настоящий телефонный разговор!
-
-🤖 **AI-технологии:**
-• Ollama (llama2) для локальных ответов
-• OpenAI GPT как резервный канал
-• Улучшенное распознавание речи
-• Автоматическое форматирование ответов
-
-✨ **Попробуйте прямо сейчас:**
-🎙️ Запишите голосовое: "Хочу выбрать профессию в IT"
-🎙️ Или спросите: "Какая работа мне подойдет?"
-🎙️ Получите мгновенную консультацию!
-
-Для полного психологического теста: /start""",
-        
-        'he': """📞 **מצב מענה טלפוני אוטומטי**
-
-🎯 **מה זה:**
-• בדיקת פונקציות לשיחות טלפון
-• עיבוד הודעות קוליות  
-• אינטגרציה עם AI למענה
-
-🧪 **איך לבדוק:**
-1. שלחו הודעה קולית
-2. קבלו תשובת AI (סימולציה של שיחה טלפונית)
-3. נסו סוגים שונים של שאלות
-
-📱 **סטטוס אינטגרציה:**
-• הודעות קוליות Telegram: ✅ עובד
-• שרת WebSocket: ⏳ בפיתוח
-• אינטגרציית Twilio: ⏳ מתוכנן
-
-לחזרה לפסיכואנליזה: /start""",
-        
-        'en': """📞 **Phone Auto-responder Mode**
-
-🎯 **What is this:**
-• Testing functions for phone calls
-• Voice message processing
-• AI integration for responses
-
-🧪 **How to test:**
-1. Send a voice message
-2. Get AI response (phone conversation simulation)
-3. Try different types of questions
-
-📱 **Integration status:**
-• Telegram voice: ✅ Working
-• WebSocket server: ⏳ In development
-• Twilio integration: ⏳ Planned
-
-To return to psychoanalysis: /start"""
-    }
-    
-    await update.message.reply_text(phone_text[user_lang], parse_mode=ParseMode.MARKDOWN)
-
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда /status - статус всех систем"""
-    user_lang = context.user_data.get('language', 'ru')
-    
-    # Проверяем голосовые функции
-    voice_status = "✅ Подключены" if VOICE_ENABLED else "⚠️ Отключены"
-    
-    status_text = {
-        'ru': f"""📊 **Статус системы HR-Психоаналитика + Автоответчик**
-
-🧠 **Психоанализ (основная функция):**
-✅ 7-вопросный опрос
-✅ Экспресс-анализ из диалога
-✅ GPT-4 анализ личности
-✅ HR-оценки кандидатов
-✅ Многоязычность (ru/he/en)
-
-📞 **Автоответчик (новое):**
-{voice_status} Голосовые сообщения
-✅ WebSocket сервер готов
-✅ Веб-интерфейс для тестирования
-⏳ Twilio интеграция (планируется)
-
-💼 **HR-функции:**
-✅ База данных кандидатов
-✅ HR-панель для специалистов
-✅ Сравнение кандидатов
-
-🔧 **Системные функции:**
-✅ Railway деплой
-✅ Многопользовательский режим
-✅ Безопасность данных
-
-**Команды:** /start /help /phone /hr_panel /status""",
-        
-        'he': f"""📊 **סטטוס מערכת HR-פסיכואנליטיקאי + מענה אוטומטי**
-
-🧠 **פסיכואנליזה (פונקציה עיקרית):**
-✅ סקר של 7 שאלות
-✅ ניתוח מהיר מהשיחה
-✅ ניתוח אישיות GPT-4
-✅ הערכות HR של מועמדים
-✅ רב-לשוניות (ru/he/en)
-
-📞 **מענה אוטומטי (חדש):**
-{voice_status} הודעות קוליות
-✅ שרת WebSocket מוכן
-✅ ממשק אינטרנט לבדיקה
-⏳ אינטגרציית Twilio (מתוכנן)
-
-💼 **פונקציות HR:**
-✅ בסיס נתונים מועמדים
-✅ פאנל HR למומחים
-✅ השוואת מועמדים
-
-🔧 **פונקציות מערכת:**
-✅ פריסת Railway
-✅ מצב רב-משתמשים
-✅ אבטחת נתונים
-
-**פקודות:** /start /help /phone /hr_panel /status""",
-        
-        'en': f"""📊 **HR-Psychoanalyst + Auto-responder System Status**
-
-🧠 **Psychoanalysis (main function):**
-✅ 7-question survey
-✅ Express analysis from dialog
-✅ GPT-4 personality analysis
-✅ HR candidate evaluations
-✅ Multilingual (ru/he/en)
-
-📞 **Auto-responder (new):**
-{voice_status} Voice messages
-⏳ WebSocket server (in development)
-⏳ Twilio integration (planned)
-
-💼 **HR functions:**
-✅ Candidate database
-✅ HR panel for specialists
-✅ Candidate comparison
-
-🔧 **System functions:**
-✅ Railway deployment
-✅ Multi-user mode
-✅ Data security
-
-**Commands:** /start /help /phone /hr_panel /status"""
-    }
-    
-    # Отправляем без Markdown из-за потенциальных ошибок парсинга
-    await update.message.reply_text(status_text[user_lang], parse_mode=None)
-
 async def setup_bot_commands(application):
     """Настройка команд бота"""
     commands = [
-        BotCommand("start", "🧠 Психологический анализ + HR"),
-        BotCommand("help", "📋 Справка о возможностях"),
-        BotCommand("phone", "📞 Режим автоответчика"),
-        BotCommand("status", "📊 Статус всех систем"),
-        BotCommand("cancel", "❌ Отменить опрос")
+        BotCommand("start", "Начать психологический анализ"),
+        BotCommand("help", "Справка о возможностях бота"),
+        BotCommand("cancel", "Отменить текущий опрос")
     ]
     await application.bot.set_my_commands(commands)
 
@@ -2086,9 +1978,6 @@ def main():
         states={
             Q1: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
-                CommandHandler('cancel', cancel),
-                CommandHandler('phone', phone_mode_command),
-                CommandHandler('status', status_command),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$"),
                 CallbackQueryHandler(start_survey_callback, pattern="start_survey"),
                 CallbackQueryHandler(express_analysis_callback, pattern="express_analysis"),
@@ -2096,32 +1985,26 @@ def main():
             ],
             Q2: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
-                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q3: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
-                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q4: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
-                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q5: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
-                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q6: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
-                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
             Q7: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_answer),
-                CommandHandler('cancel', cancel),
                 CallbackQueryHandler(handle_back_button, pattern=r"^back_\d+$")
             ],
         },
@@ -2131,8 +2014,6 @@ def main():
     
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('help', help_command))
-    application.add_handler(CommandHandler('phone', phone_mode_command))
-    application.add_handler(CommandHandler('status', status_command))
     application.add_handler(CommandHandler('hr_panel', hr_panel_command))
     application.add_handler(CommandHandler('hr_compare', hr_compare_command))
     
