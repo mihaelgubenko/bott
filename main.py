@@ -10,14 +10,8 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, ConversationHandler, CallbackQueryHandler
 )
 
-# Импортируем голосовой обработчик
-try:
-    from voice_bot import handle_voice, handle_video_note
-    VOICE_ENABLED = True
-    print("✅ Голосовые функции подключены")
-except ImportError as e:
-    print(f"⚠️ Голосовые функции недоступны: {e}")
-    VOICE_ENABLED = False
+# Голосовые функции отключены полностью
+VOICE_ENABLED = False
 import openai
 from telegram.constants import ParseMode
 
@@ -28,18 +22,17 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 HR_PASSWORD = os.getenv('HR_PASSWORD', 'HR2024')
 
-# Проверка наличия всех необходимых переменных окружения
+# Проверка необходимых переменных
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN не найден в .env файле!")
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY не найден в .env файле!")
-if not ADMIN_CHAT_ID:
-    raise ValueError("ADMIN_CHAT_ID не найден в .env файле!")
 
+# ADMIN_CHAT_ID больше не обязателен в минимальном режиме
 try:
-    ADMIN_CHAT_ID = int(ADMIN_CHAT_ID)
+    ADMIN_CHAT_ID = int(ADMIN_CHAT_ID) if ADMIN_CHAT_ID else None
 except ValueError:
-    raise ValueError("ADMIN_CHAT_ID должен быть числом!")
+    ADMIN_CHAT_ID = None
 
 # Вопросы опроса на разных языках
 QUESTIONS = {
@@ -330,106 +323,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# База данных кандидатов
-DB_NAME = 'candidates.db'
-
-def init_database():
-    """Инициализация базы данных кандидатов"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS candidates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER UNIQUE,
-            name TEXT,
-            language TEXT,
-            analysis_data TEXT,
-            hr_scores TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
-    logger.info("База данных кандидатов инициализирована")
-
-def save_candidate(telegram_id, name, language, analysis_data, hr_scores):
-    """Сохранение кандидата в базу данных"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute('''
-            INSERT OR REPLACE INTO candidates 
-            (telegram_id, name, language, analysis_data, hr_scores, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (telegram_id, name, language, json.dumps(analysis_data), json.dumps(hr_scores), datetime.now()))
-        
-        conn.commit()
-        logger.info(f"Кандидат {name} (ID: {telegram_id}) сохранен в базу данных")
-        return True
-    except Exception as e:
-        logger.error(f"Ошибка сохранения кандидата: {e}")
-        return False
-    finally:
-        conn.close()
-
-def get_candidate(telegram_id):
-    """Получение кандидата из базы данных"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute('SELECT * FROM candidates WHERE telegram_id = ?', (telegram_id,))
-        result = cursor.fetchone()
-        
-        if result:
-            return {
-                'id': result[0],
-                'telegram_id': result[1],
-                'name': result[2],
-                'language': result[3],
-                'analysis_data': json.loads(result[4]) if result[4] else None,
-                'hr_scores': json.loads(result[5]) if result[5] else None,
-                'created_at': result[6],
-                'updated_at': result[7]
-            }
-        return None
-    except Exception as e:
-        logger.error(f"Ошибка получения кандидата: {e}")
-        return None
-    finally:
-        conn.close()
-
-def get_all_candidates():
-    """Получение всех кандидатов для HR-панели"""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute('SELECT * FROM candidates ORDER BY created_at DESC')
-        results = cursor.fetchall()
-        
-        candidates = []
-        for result in results:
-            candidates.append({
-                'id': result[0],
-                'telegram_id': result[1],
-                'name': result[2],
-                'language': result[3],
-                'analysis_data': json.loads(result[4]) if result[4] else None,
-                'hr_scores': json.loads(result[5]) if result[5] else None,
-                'created_at': result[6],
-                'updated_at': result[7]
-            })
-        return candidates
-    except Exception as e:
-        logger.error(f"Ошибка получения всех кандидатов: {e}")
-        return []
-    finally:
-        conn.close()
+"""Минимальный режим: база данных и HR-функции отключены"""
 
 def check_hr_password(message_text):
     """Проверка HR-пароля из сообщения"""
@@ -713,90 +607,13 @@ async def handle_general_message(update: Update, context: ContextTypes.DEFAULT_T
             await process_express_analysis(update, context)
             return
  
-async def hr_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда для HR-специалистов - просмотр базы кандидатов"""
-    user = update.effective_user
-    args = context.args
-    
-    if not args or args[0] != HR_PASSWORD:
-        await update.message.reply_text(get_hr_access_denied_message('ru'))
-        return
-    
-    candidates = get_all_candidates()
-    if not candidates:
-        await update.message.reply_text("📊 База кандидатов пуста.")
-        return
-    
-    message = "📊 **База кандидатов:**\n\n"
-    for i, candidate in enumerate(candidates, 1):
-        message += f"**{i}. {candidate['name']}**\n"
-        message += f"Дата: {candidate['date']}\n"
-        message += f"Психотип: {candidate['psychotype']}\n"
-        message += f"Рекомендация: {candidate['recommendation']}\n\n"
-    
-    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+"""HR-команды отключены в минимальном режиме"""
 
-async def hr_compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда для HR-специалистов - сравнение кандидатов"""
-    user = update.effective_user
-    args = context.args
-    
-    if not args or args[0] != HR_PASSWORD:
-        await update.message.reply_text(get_hr_access_denied_message('ru'))
-        return
-    
-    candidates = get_all_candidates()
-    if len(candidates) < 2:
-        await update.message.reply_text("❌ Недостаточно кандидатов для сравнения (нужно минимум 2).")
-        return
-    
-    message = "🔍 **Сравнение кандидатов:**\n\n"
-    for i, candidate in enumerate(candidates, 1):
-        message += f"**{i}. {candidate['name']}**\n"
-        message += f"Психотип: {candidate['psychotype']}\n"
-        message += f"HR-оценки: {candidate['hr_scores']}\n"
-        message += f"Рекомендация: {candidate['recommendation']}\n\n"
-    
-    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+"""HR-команды отключены в минимальном режиме"""
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Команда помощи"""
-    # Определяем язык по команде или предыдущим сообщениям
-    user_lang = context.user_data.get('language', 'ru')
-    await update.message.reply_text(HELP_TEXT[user_lang], parse_mode=ParseMode.MARKDOWN)
-    
-    # Проверяем пароль
-    if not check_hr_password(update.message.text):
-        await update.message.reply_text(get_hr_access_denied_message(user_lang), parse_mode=ParseMode.MARKDOWN)
-        return
-    
-    # Получаем всех кандидатов
-    candidates = get_all_candidates()
-    
-    if not candidates:
-        await update.message.reply_text("📊 HR-панель\n\nКандидатов пока нет.")
-        return
-    
-    # Формируем отчет
-    report = "📊 **HR-ПАНЕЛЬ**\n\n"
-    report += f"Всего кандидатов: {len(candidates)}\n\n"
-    
-    for i, candidate in enumerate(candidates[:10], 1):  # Показываем последних 10
-        hr_scores = candidate.get('hr_scores', {})
-        total_score = sum(hr_scores.values()) / len(hr_scores) if hr_scores else 0
-        
-        report += f"**{i}. {candidate['name']}**\n"
-        report += f"• ID: {candidate['telegram_id']}\n"
-        report += f"• Язык: {candidate['language']}\n"
-        report += f"• Общая оценка: {total_score:.1f}/10\n"
-        report += f"• Дата: {candidate['created_at'][:10]}\n\n"
-    
-    if len(candidates) > 10:
-        report += f"... и еще {len(candidates) - 10} кандидатов\n\n"
-    
-    report += "💡 Используйте /hr_compare для сравнения кандидатов"
-    
-    await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
+    """Команда помощи (минимальный режим)"""
+    await update.message.reply_text(HELP_TEXT['ru'], parse_mode=ParseMode.MARKDOWN)
 
 async def hr_compare_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Сравнение кандидатов"""
