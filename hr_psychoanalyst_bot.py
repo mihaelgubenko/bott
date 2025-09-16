@@ -343,11 +343,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     if any(keyword in text.lower() for keyword in psychology_keywords):
         # Psychology consultation
-        await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
+        thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
         prompt = get_psychology_consultation_prompt(text)
         response = await get_ai_response(prompt, max_tokens=500)
         
+        await thinking_msg.delete()  # Удаляем сообщение "Анализирую..."
         await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
         return WAITING_MESSAGE
     
@@ -356,7 +357,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     if message_count >= 10:
         # Trigger express analysis
-        await update.message.reply_text(
+        thinking_msg = await update.message.reply_text(
             "🎯 Отлично! У меня достаточно информации для экспресс-анализа. "
             "Провожу анализ вашей личности..."
         )
@@ -365,6 +366,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         prompt = get_express_analysis_prompt(conversation_text, message_count)
         response = await get_ai_response(prompt, max_tokens=400)
         
+        await thinking_msg.delete()  # Удаляем сообщение "Провожу анализ..."
         await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
         
         # Offer full analysis
@@ -405,10 +407,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"💭 {question}")
         return WAITING_MESSAGE
     
-    # Regular response
-    await update.message.reply_text(
-        "Понял. Расскажите больше о себе - это поможет мне лучше понять вашу личность."
-    )
+    # Smart AI response based on conversation
+    thinking_msg = await update.message.reply_text("🤔 Думаю...")
+    
+    # Generate intelligent response
+    conversation_text = " ".join(conversation_history[user.id][-5:])  # Last 5 messages
+    prompt = f"""
+Ты — профессиональный HR-психоаналитик и карьерный консультант.
+
+ДИАЛОГ:
+{conversation_text}
+
+ЗАДАЧА: Дай умный, эмпатичный ответ и задай один профессиональный вопрос для продолжения диалога.
+
+ПРИНЦИПЫ:
+- Эмпатия и понимание
+- Профессиональные вопросы
+- Подведение к анализу личности
+- Естественное общение
+
+ФОРМАТ: Короткий ответ (1-2 предложения) + один вопрос.
+
+СТИЛЬ: Теплый, профессиональный, заинтересованный.
+"""
+    
+    response = await get_ai_response(prompt, max_tokens=200)
+    await thinking_msg.delete()  # Удаляем сообщение "Думаю..."
+    await update.message.reply_text(response)
     return WAITING_MESSAGE
 
 
@@ -444,13 +469,15 @@ async def handle_full_analysis_answer(update: Update, context: ContextTypes.DEFA
         return Q1 + current_q
     else:
         # All questions answered, conduct full analysis
-        await update.message.reply_text(
+        thinking_msg = await update.message.reply_text(
             "🎯 Отлично! Все ответы получены. "
             "Провожу детальный психоанализ... Это займет несколько минут."
         )
         
         prompt = get_full_analysis_prompt(answers)
         response = await get_ai_response(prompt, max_tokens=1500)
+        
+        await thinking_msg.delete()  # Удаляем сообщение "Провожу анализ..."
         
         # Split long response
         max_length = 4000
