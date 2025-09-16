@@ -103,6 +103,58 @@ def detect_language(text: str) -> str:
     # По умолчанию русский
     return 'ru'
 
+# Speech pattern analysis
+def analyze_speech_patterns(text: str) -> dict:
+    """Анализ паттернов речи для определения роли ИИ"""
+    text_lower = text.lower()
+    
+    patterns = {
+        'psychology_need': False,
+        'career_need': False,
+        'emotional_support': False,
+        'cancellation': False,
+        'provocative': False,
+        'topic_change': False,
+        'self_introduction_request': False
+    }
+    
+    # Психологическая помощь
+    psychology_keywords = ['сон', 'сны', 'депрессия', 'тревога', 'стресс', 'паника', 'страх', 'грусть', 'одиночество', 'отношения', 'семья', 'родители', 'дети', 'любовь', 'развод', 'смерть', 'потеря', 'плохо', 'больно', 'страшно']
+    if any(keyword in text_lower for keyword in psychology_keywords):
+        patterns['psychology_need'] = True
+    
+    # Карьерные вопросы
+    career_keywords = ['работа', 'карьера', 'профессия', 'зарплата', 'деньги', 'учеба', 'образование', 'навыки', 'опыт', 'компания', 'начальник', 'коллеги']
+    if any(keyword in text_lower for keyword in career_keywords):
+        patterns['career_need'] = True
+    
+    # Эмоциональная поддержка
+    emotional_keywords = ['одинок', 'грустно', 'плохо', 'устал', 'устала', 'сложно', 'трудно', 'помоги', 'поддержка', 'понимаю', 'понимаешь']
+    if any(keyword in text_lower for keyword in emotional_keywords):
+        patterns['emotional_support'] = True
+    
+    # Отмена/прекращение
+    cancellation_keywords = ['не хочу', 'хватит', 'достаточно', 'стоп', 'прекрати', 'остановись', 'не буду', 'не буду говорить', 'не хочу говорить', 'хватит говорить']
+    if any(keyword in text_lower for keyword in cancellation_keywords):
+        patterns['cancellation'] = True
+    
+    # Смена темы
+    topic_change_keywords = ['другое', 'другая тема', 'давай о', 'поговорим о', 'хочу поговорить о', 'смени тему', 'не об этом']
+    if any(keyword in text_lower for keyword in topic_change_keywords):
+        patterns['topic_change'] = True
+    
+    # Запрос рассказать о себе
+    self_intro_keywords = ['расскажи о себе', 'расскажи о тебе', 'кто ты', 'что ты', 'как ты работаешь', 'твоя история', 'твоя работа']
+    if any(keyword in text_lower for keyword in self_intro_keywords):
+        patterns['self_introduction_request'] = True
+    
+    # Провокационные вопросы
+    provocative_keywords = ['глупый', 'тупой', 'бесполезный', 'не понимаешь', 'не слушаешь', 'плохой', 'ужасный', 'ненавижу', 'ненавидишь']
+    if any(keyword in text_lower for keyword in provocative_keywords):
+        patterns['provocative'] = True
+    
+    return patterns
+
 # Professional prompts
 def get_express_analysis_prompt(conversation: str, message_count: int) -> str:
     return f"""
@@ -339,6 +391,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Я работаю только на русском языке. Пожалуйста, напишите на русском.")
         return WAITING_MESSAGE
     
+    # Analyze speech patterns
+    patterns = analyze_speech_patterns(text)
+    
     # Store conversation
     if user.id not in conversation_history:
         conversation_history[user.id] = []
@@ -348,6 +403,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Keep only last 15 messages
     if len(conversation_history[user.id]) > 15:
         conversation_history[user.id] = conversation_history[user.id][-15:]
+    
+    # Handle cancellation
+    if patterns['cancellation']:
+        await update.message.reply_text(
+            "Понял. Если захотите поговорить снова - просто напишите. "
+            "Я всегда готов выслушать и поддержать. 💙"
+        )
+        # Clear user data
+        user_data.pop(user.id, None)
+        conversation_history.pop(user.id, None)
+        return ConversationHandler.END
+    
+    # Handle topic change
+    if patterns['topic_change']:
+        await update.message.reply_text(
+            "Конечно! О чем бы вы хотели поговорить? "
+            "Я готов обсудить любую тему, которая вас интересует. 😊"
+        )
+        return WAITING_MESSAGE
+    
+    # Handle self introduction request
+    if patterns['self_introduction_request']:
+        await update.message.reply_text(
+            "Конечно! Я HR-психоаналитик и карьерный консультант. "
+            "Моя работа - помогать людям понять себя, найти свой путь в жизни и карьере. "
+            "Я использую методы психоанализа, чтобы лучше понять вашу личность и дать рекомендации. "
+            "А теперь расскажите мне о себе! 😊"
+        )
+        return WAITING_MESSAGE
+    
+    # Handle provocative questions
+    if patterns['provocative']:
+        await update.message.reply_text(
+            "Понимаю, что вы расстроены. Я здесь, чтобы помочь, а не навредить. "
+            "Если что-то не так в моих ответах, дайте знать - я постараюсь лучше понять вас. "
+            "Что именно вас беспокоит? 💙"
+        )
+        return WAITING_MESSAGE
     
     # Check for full analysis request
     if 'полный анализ' in text.lower() or 'детальный анализ' in text.lower() or 'платный анализ' in text.lower():
@@ -378,17 +471,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         return Q1
     
-    # Check if it's a psychology-related question
-    psychology_keywords = ['сон', 'сны', 'депрессия', 'тревога', 'стресс', 'паника', 'страх', 'грусть', 'одиночество', 'отношения', 'семья', 'родители', 'дети', 'любовь', 'развод', 'смерть', 'потеря']
-    
-    if any(keyword in text.lower() for keyword in psychology_keywords):
-        # Psychology consultation
+    # Handle psychology-related questions
+    if patterns['psychology_need'] or patterns['emotional_support']:
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
         prompt = get_psychology_consultation_prompt(text)
-        response = await get_ai_response(prompt, max_tokens=500)
+        response = await get_ai_response(prompt, max_tokens=300)
         
-        await thinking_msg.delete()  # Удаляем сообщение "Анализирую..."
+        await thinking_msg.delete()
         await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
         return WAITING_MESSAGE
     
@@ -447,35 +537,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(f"💭 {question}")
         return WAITING_MESSAGE
     
-    # Smart AI response based on conversation
+    # Smart AI response based on conversation and patterns
     thinking_msg = await update.message.reply_text("🤔 Думаю...")
     
-    # Generate intelligent response
+    # Generate intelligent response based on patterns
     conversation_text = " ".join(conversation_history[user.id][-5:])  # Last 5 messages
+    
+    # Determine primary role based on patterns
+    if patterns['career_need'] and not patterns['psychology_need']:
+        primary_role = "HR-СПЕЦИАЛИСТ"
+        focus = "карьерные рекомендации и профессиональное развитие"
+    elif patterns['psychology_need'] or patterns['emotional_support']:
+        primary_role = "ПСИХОЛОГ"
+        focus = "эмоциональная поддержка и психологическая помощь"
+    else:
+        primary_role = "КОНСУЛЬТАНТ"
+        focus = "общее развитие и самоанализ"
+    
     prompt = f"""
-Ты — HR-психоаналитик и карьерный консультант. Твоя главная роль - ПОМОЩЬ В РАЗВИТИИ.
+Ты — HR-психоаналитик и карьерный консультант. 
 
 ДИАЛОГ:
 {conversation_text}
 
-ТВОИ РОЛИ (баланс):
+АНАЛИЗ ПОЛЬЗОВАТЕЛЯ:
+- Основная потребность: {focus}
+- Роль: {primary_role}
+
+ТВОИ РОЛИ (адаптивные):
 1. ПСИХОЛОГ - эмпатия, поддержка, понимание эмоций
-2. HR-СПЕЦИАЛИСТ - анализ личности, карьерные рекомендации
+2. HR-СПЕЦИАЛИСТ - анализ личности, карьерные рекомендации  
 3. КОНСУЛЬТАНТ - помощь с выбором профессии и развитием
 
 ПРИНЦИПЫ:
 - СНАЧАЛА прояви эмпатию и понимание
-- Анализируй личность для карьерных рекомендаций
+- Адаптируйся к потребностям пользователя
 - Поддерживай эмоционально
-- Мягко подводи к самоанализу и развитию
+- Мягко подводи к самоанализу
 
-ФОРМАТ: Эмпатичный ответ (1-2 предложения) + вопрос для анализа личности.
+ФОРМАТ: Эмпатичный ответ (1-2 предложения) + релевантный вопрос.
 
-СТИЛЬ: Теплый, профессиональный, заинтересованный в развитии человека.
+СТИЛЬ: Теплый, профессиональный, адаптивный к ситуации.
 """
     
     response = await get_ai_response(prompt, max_tokens=200)
-    await thinking_msg.delete()  # Удаляем сообщение "Думаю..."
+    await thinking_msg.delete()
     await update.message.reply_text(response)
     return WAITING_MESSAGE
 
