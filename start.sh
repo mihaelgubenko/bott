@@ -1,2 +1,2 @@
 #!/bin/bash
-python bot_minimal.py 
+python hr_psychoanalyst_bot.py 

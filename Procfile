@@ -1,1 +1,1 @@
-worker: python bot_minimal.py
+worker: python hr_psychoanalyst_bot.py
