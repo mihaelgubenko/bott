@@ -283,6 +283,36 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     return ConversationHandler.END
 
+async def clear_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Очистить память бота (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа (можно настроить)
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    # Очистка памяти
+    user_data.clear()
+    conversation_history.clear()
+    
+    # Очистка базы данных
+    try:
+        conn = sqlite3.connect('psychoanalyst.db')
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM clients')
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(
+            "✅ Память бота полностью очищена:\n"
+            "• Очищена RAM память\n"
+            "• Очищена база данных\n"
+            "• Все диалоги удалены"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при очистке: {e}")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     text = update.message.text.strip()
@@ -537,6 +567,7 @@ def main():
     # Add handlers
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler('clear', clear_memory))
     
     logger.info("HR-Психоаналитик запущен")
     application.run_polling()
