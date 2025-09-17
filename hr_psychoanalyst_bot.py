@@ -4,6 +4,7 @@ import json
 import sqlite3
 import logging
 from datetime import datetime
+from typing import Tuple
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.constants import ParseMode
@@ -16,6 +17,10 @@ from telegram.ext import (
     filters,
 )
 import openai
+
+# Новые модули для ИИ-улучшений
+from sentiment_analyzer import get_sentiment_analyzer
+from prompt_ab_testing import get_ab_testing_manager, PromptType
 
 # ENV
 load_dotenv()
@@ -40,6 +45,10 @@ logger = logging.getLogger(__name__)
 # Storage
 user_data = {}
 conversation_history = {}
+
+# ИИ модули
+sentiment_analyzer = get_sentiment_analyzer()
+ab_testing_manager = get_ab_testing_manager()
 
 # Professional 7 questions for full analysis
 PROFESSIONAL_QUESTIONS = [
@@ -161,9 +170,14 @@ def analyze_speech_patterns(text: str) -> dict:
     
     return patterns
 
-# Professional prompts
-def get_express_analysis_prompt(conversation: str, message_count: int) -> str:
-    return f"""
+# Professional prompts with A/B testing
+def get_express_analysis_prompt(conversation: str, message_count: int, user_id: int) -> Tuple[str, str]:
+    """Получить промпт для экспресс-анализа с учетом A/B тестирования"""
+    template, variant_id = ab_testing_manager.get_prompt_for_user(user_id, PromptType.EXPRESS_ANALYSIS)
+    
+    if not template:
+        # Fallback к стандартному промпту
+        template = """
 Ты — профессиональный HR-психоаналитик и карьерный консультант. 
 
 ДИАЛОГ КЛИЕНТА ({message_count} сообщений):
@@ -188,6 +202,10 @@ def get_express_analysis_prompt(conversation: str, message_count: int) -> str:
 
 СТИЛЬ: Профессиональный, эмпатичный, конкретный. Максимум 300 слов.
 """
+        variant_id = "default"
+    
+    prompt = template.format(conversation=conversation, message_count=message_count)
+    return prompt, variant_id
 
 def get_full_analysis_prompt(answers: list) -> str:
     answers_text = "\n".join([f"{i+1}. {q}\nОтвет: {a}\n" for i, (q, a) in enumerate(zip(PROFESSIONAL_QUESTIONS, answers))])
@@ -238,8 +256,16 @@ def get_full_analysis_prompt(answers: list) -> str:
 СТИЛЬ: Профессиональный, детальный, практичный. 800-1200 слов.
 """
 
-def get_psychology_consultation_prompt(user_message: str) -> str:
-    return f"""
+def get_psychology_consultation_prompt(user_message: str, user_id: int) -> Tuple[str, str]:
+    """Получить промпт для психологической консультации с учетом A/B тестирования и анализа настроения"""
+    # Анализ настроения пользователя
+    sentiment_result = sentiment_analyzer.analyze_text(user_message)
+    
+    template, variant_id = ab_testing_manager.get_prompt_for_user(user_id, PromptType.PSYCHOLOGY_CONSULTATION)
+    
+    if not template:
+        # Fallback к стандартному промпту
+        template = """
 Ты — опытный психолог с большим сердцем. Твоя главная задача - ПОДДЕРЖАТЬ и ПОНИМАТЬ.
 
 СООБЩЕНИЕ КЛИЕНТА:
@@ -258,8 +284,21 @@ def get_psychology_consultation_prompt(user_message: str) -> str:
 🤗 Поддержка и принятие
 💡 Мягкие рекомендации (если уместно)
 
-СТИЛЬ: Теплый, понимающий, как разговор с близким другом. 150-300 слов.
+СТИЛЬ: Теплый, понимающий, как разговор с близким друг. 150-300 слов.
 """
+        variant_id = "default"
+    
+    # Форматируем промпт с учетом анализа настроения
+    sentiment_info = f"""Настроение: {sentiment_result.overall_sentiment} (уверенность: {sentiment_result.confidence:.2f})
+Рекомендуемый стиль ответа: {sentiment_result.recommendation}
+Психологические показатели: стресс={sentiment_result.psychological_indicators.get('stress_level', 0):.2f}, тревога={sentiment_result.psychological_indicators.get('anxiety_level', 0):.2f}"""
+    
+    if '{sentiment_analysis}' in template:
+        prompt = template.format(user_message=user_message, sentiment_analysis=sentiment_info)
+    else:
+        prompt = template.format(user_message=user_message)
+    
+    return prompt, variant_id
 
 # OpenAI client
 async def get_ai_response(prompt: str, max_tokens: int = 1000) -> str:
@@ -299,6 +338,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 • Просто общайтесь со мной естественно
 • После 10 сообщений проведу экспресс-анализ (бесплатно)
 • Для детального психоанализа скажите 'полный анализ'
+• Использую ИИ для анализа эмоций и настроения
+• Постоянно улучшаюсь через A/B тестирование
 
 **Конфиденциально и анонимно** 💙
 """
@@ -324,6 +365,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /start - начать общение
 /help - эта справка
 /cancel - отменить текущий процесс
+/reset - сбросить бота
+/stats - статистика (только админ)
+
+**🤖 ИИ-возможности:**
+• Анализ эмоций и настроения в реальном времени
+• A/B тестирование промптов для лучших ответов
+• Персонализация на основе стиля общения
 
 **Все конфиденциально и анонимно!** 💙
 """
@@ -382,6 +430,47 @@ async def reset_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🔄 Бот сброшен!\n\n"
         "Все ваши данные очищены. Начните заново с /start"
     )
+
+async def show_ab_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать статистику A/B тестирования (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа (можно настроить)
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        stats = ab_testing_manager.get_test_statistics()
+        
+        if not stats:
+            await update.message.reply_text("📊 Пока нет данных для A/B тестирования")
+            return
+        
+        message = "📊 **Статистика A/B тестирования:**\n\n"
+        
+        for variant_id, data in stats.items():
+            message += f"**{data['name']}** (`{variant_id}`)\n"
+            message += f"• Использований: {data['total_uses']}\n"
+            message += f"• Конверсия: {data['conversion_rate']:.1%}\n"
+            message += f"• Качество: {data['avg_quality']:.2f}/1.0\n"
+            message += f"• Оценка пользователей: {data['avg_feedback']:.1f}/5.0\n\n"
+        
+        # Определяем лучшие варианты
+        express_winner = ab_testing_manager.get_winning_variant(PromptType.EXPRESS_ANALYSIS)
+        psych_winner = ab_testing_manager.get_winning_variant(PromptType.PSYCHOLOGY_CONSULTATION)
+        
+        message += "🏆 **Лучшие варианты:**\n"
+        if express_winner:
+            message += f"• Экспресс-анализ: `{express_winner}`\n"
+        if psych_winner:
+            message += f"• Психологическая консультация: `{psych_winner}`\n"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Error showing AB stats: {e}")
+        await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -497,8 +586,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if patterns['psychology_need'] or patterns['emotional_support']:
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
-        prompt = get_psychology_consultation_prompt(text)
+        prompt, variant_id = get_psychology_consultation_prompt(text, user.id)
         response = await get_ai_response(prompt, max_tokens=300)
+        
+        # Записываем результат A/B теста
+        quality_score = ab_testing_manager.evaluate_response_quality(text, response)
+        ab_testing_manager.record_test_result(
+            user_id=user.id,
+            prompt_variant_id=variant_id,
+            prompt_type=PromptType.PSYCHOLOGY_CONSULTATION,
+            response_quality=quality_score
+        )
         
         await thinking_msg.delete()
         await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
@@ -515,8 +613,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         
         conversation_text = " ".join(conversation_history[user.id])
-        prompt = get_express_analysis_prompt(conversation_text, message_count)
+        prompt, variant_id = get_express_analysis_prompt(conversation_text, message_count, user.id)
         response = await get_ai_response(prompt, max_tokens=400)
+        
+        # Записываем результат A/B теста
+        quality_score = ab_testing_manager.evaluate_response_quality(conversation_text, response)
+        ab_testing_manager.record_test_result(
+            user_id=user.id,
+            prompt_variant_id=variant_id,
+            prompt_type=PromptType.EXPRESS_ANALYSIS,
+            response_quality=quality_score
+        )
         
         await thinking_msg.delete()  # Удаляем сообщение "Провожу анализ..."
         await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
@@ -712,6 +819,7 @@ def main():
     application.add_handler(CommandHandler('help', help_command))
     application.add_handler(CommandHandler('clear', clear_memory))
     application.add_handler(CommandHandler('reset', reset_bot))
+    application.add_handler(CommandHandler('stats', show_ab_stats))
     
     logger.info("HR-Психоаналитик запущен")
     application.run_polling()
