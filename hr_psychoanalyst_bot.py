@@ -256,7 +256,7 @@ def get_full_analysis_prompt(answers: list) -> str:
 СТИЛЬ: Профессиональный, детальный, практичный. 800-1200 слов.
 """
 
-def get_psychology_consultation_prompt(user_message: str, user_id: int) -> Tuple[str, str]:
+def get_psychology_consultation_prompt(user_message: str, user_id: int, conversation_history: list = None) -> Tuple[str, str]:
     """Получить промпт для психологической консультации с учетом A/B тестирования и анализа настроения"""
     # Анализ настроения пользователя
     sentiment_result = sentiment_analyzer.analyze_text(user_message)
@@ -264,29 +264,45 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int) -> Tuple
     template, variant_id = ab_testing_manager.get_prompt_for_user(user_id, PromptType.PSYCHOLOGY_CONSULTATION)
     
     if not template:
-        # Fallback к стандартному промпту
+        # Fallback к стандартному промпту с контекстом
         template = """
 Ты — опытный психолог с большим сердцем. Твоя главная задача - ПОДДЕРЖАТЬ и ПОНИМАТЬ.
 
-СООБЩЕНИЕ КЛИЕНТА:
+ИСТОРИЯ РАЗГОВОРА:
+{conversation_context}
+
+ТЕКУЩЕЕ СООБЩЕНИЕ КЛИЕНТА:
 {user_message}
 
-ТВОЯ РОЛЬ: Друг-психолог, который всегда на стороне человека.
+ВАЖНО: Если клиент ссылается на предыдущие части разговора ("мы говорили об этом", "выше", "раньше"), обязательно учитывай контекст из истории разговора.
+
+ТВОЯ РОЛЬ: Друг-психолог, который всегда на стороне человека и ПОМНИТ весь разговор.
 
 ПРИНЦИПЫ:
 - СНАЧАЛА прояви эмпатию и понимание
+- УЧИТЫВАЙ всю историю разговора
 - НЕ давай советы, если человек не просит
 - Поддерживай эмоционально
 - Будь теплым и человечным
+- Если человек говорит "не понял" или ссылается на предыдущее - обратись к контексту
 
 ФОРМАТ ОТВЕТА:
-💙 Эмпатичный ответ (понимание чувств)
+💙 Эмпатичный ответ (понимание чувств с учетом контекста)
 🤗 Поддержка и принятие
 💡 Мягкие рекомендации (если уместно)
 
-СТИЛЬ: Теплый, понимающий, как разговор с близким друг. 150-300 слов.
+СТИЛЬ: Теплый, понимающий, как разговор с близким другом, который помнит всё. 150-300 слов.
 """
         variant_id = "default"
+    
+    # Подготавливаем контекст разговора
+    conversation_context = ""
+    if conversation_history and len(conversation_history) > 1:
+        # Берем последние 10 сообщений для контекста
+        recent_messages = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history[:-1]  # исключаем текущее сообщение
+        conversation_context = "Предыдущие сообщения:\n" + "\n".join([f"- {msg}" for msg in recent_messages])
+    else:
+        conversation_context = "Это первое сообщение в разговоре."
     
     # Форматируем промпт с учетом анализа настроения
     sentiment_info = f"""Настроение: {sentiment_result.overall_sentiment} (уверенность: {sentiment_result.confidence:.2f})
@@ -294,7 +310,16 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int) -> Tuple
 Психологические показатели: стресс={sentiment_result.psychological_indicators.get('stress_level', 0):.2f}, тревога={sentiment_result.psychological_indicators.get('anxiety_level', 0):.2f}"""
     
     if '{sentiment_analysis}' in template:
-        prompt = template.format(user_message=user_message, sentiment_analysis=sentiment_info)
+        prompt = template.format(
+            user_message=user_message, 
+            conversation_context=conversation_context,
+            sentiment_analysis=sentiment_info
+        )
+    elif '{conversation_context}' in template:
+        prompt = template.format(
+            user_message=user_message,
+            conversation_context=conversation_context
+        )
     else:
         prompt = template.format(user_message=user_message)
     
@@ -405,6 +430,8 @@ async def clear_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         conn = sqlite3.connect('psychoanalyst.db')
         cursor = conn.cursor()
         cursor.execute('DELETE FROM clients')
+        cursor.execute('DELETE FROM user_variant_assignments')  # Очищаем A/B назначения
+        cursor.execute('DELETE FROM ab_test_results')  # Очищаем результаты тестов
         conn.commit()
         conn.close()
         
@@ -412,7 +439,8 @@ async def clear_memory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "✅ Память бота полностью очищена:\n"
             "• Очищена RAM память\n"
             "• Очищена база данных\n"
-            "• Все диалоги удалены\n\n"
+            "• Все диалоги удалены\n"
+            "• A/B тесты сброшены\n\n"
             "💡 Для очистки кэша Telegram перезапустите бота командой /start"
         )
     except Exception as e:
@@ -537,20 +565,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return WAITING_MESSAGE
     
-    # Handle provocative questions and misunderstanding
-    if patterns['provocative']:
-        if 'не понял' in text.lower() or 'не поняла' in text.lower() or 'не понимаешь' in text.lower():
-            await update.message.reply_text(
-                "Извините, я действительно не понял вас правильно. "
-                "Давайте попробуем еще раз - расскажите мне, что именно вы имели в виду? "
-                "Я внимательно выслушаю и постараюсь лучше понять. 💙"
-            )
-        else:
-            await update.message.reply_text(
-                "Понимаю, что вы расстроены. Я здесь, чтобы помочь, а не навредить. "
-                "Если что-то не так в моих ответах, дайте знать - я постараюсь лучше понять вас. "
-                "Что именно вас беспокоит? 💙"
-            )
+    # Handle references to previous conversation
+    reference_keywords = ['мы говорили', 'говорили об этом', 'смотри выше', 'выше', 'раньше говорил', 'раньше сказал', 'об этом', 'это то что']
+    is_referencing_previous = any(keyword in text.lower() for keyword in reference_keywords)
+    
+    if is_referencing_previous or patterns['provocative']:
+        thinking_msg = await update.message.reply_text("🤔 Вспоминаю наш разговор...")
+        
+        # Используем полный контекст для понимания ссылки
+        prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
+        response = await get_ai_response(prompt, max_tokens=300)
+        
+        # Записываем результат A/B теста
+        quality_score = ab_testing_manager.evaluate_response_quality(text, response)
+        ab_testing_manager.record_test_result(
+            user_id=user.id,
+            prompt_variant_id=variant_id,
+            prompt_type=PromptType.PSYCHOLOGY_CONSULTATION,
+            response_quality=quality_score
+        )
+        
+        await thinking_msg.delete()
+        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
         return WAITING_MESSAGE
     
     # Check for full analysis request
@@ -586,7 +622,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if patterns['psychology_need'] or patterns['emotional_support']:
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
-        prompt, variant_id = get_psychology_consultation_prompt(text, user.id)
+        prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
         response = await get_ai_response(prompt, max_tokens=300)
         
         # Записываем результат A/B теста
@@ -669,8 +705,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Smart AI response based on conversation and patterns
     thinking_msg = await update.message.reply_text("🤔 Думаю...")
     
-    # Generate intelligent response based on patterns
-    conversation_text = " ".join(conversation_history[user.id][-5:])  # Last 5 messages
+    # Generate intelligent response based on patterns with full context
+    conversation_text = " ".join(conversation_history[user.id][-10:])  # Last 10 messages for better context
     
     # Determine primary role based on patterns
     if patterns['dream_expression']:
@@ -686,11 +722,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         primary_role = "КОНСУЛЬТАНТ"
         focus = "общее развитие и самоанализ"
     
+    # Подготавливаем контекст предыдущих сообщений
+    previous_context = ""
+    if len(conversation_history[user.id]) > 1:
+        recent_messages = conversation_history[user.id][:-1]  # все кроме текущего
+        if len(recent_messages) > 8:
+            recent_messages = recent_messages[-8:]  # последние 8 сообщений
+        previous_context = "Предыдущие сообщения в разговоре:\n" + "\n".join([f"- {msg}" for msg in recent_messages])
+    
     prompt = f"""
 Ты — HR-психоаналитик и карьерный консультант. 
 
-ДИАЛОГ:
-{conversation_text}
+КОНТЕКСТ РАЗГОВОРА:
+{previous_context}
+
+ТЕКУЩЕЕ СООБЩЕНИЕ:
+{text}
+
+ВАЖНО: Если пользователь ссылается на предыдущие части разговора, обязательно учитывай контекст выше.
 
 АНАЛИЗ ПОЛЬЗОВАТЕЛЯ:
 - Основная потребность: {focus}
@@ -703,13 +752,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 ПРИНЦИПЫ:
 - СНАЧАЛА прояви эмпатию и понимание
+- ПОМНИ весь контекст разговора
 - Адаптируйся к потребностям пользователя
 - Поддерживай эмоционально
 - Мягко подводи к самоанализу
+- Если пользователь ссылается на предыдущее - обратись к контексту
 
 ФОРМАТ: Эмпатичный ответ (1-2 предложения) + релевантный вопрос.
 
-СТИЛЬ: Теплый, профессиональный, адаптивный к ситуации.
+СТИЛЬ: Теплый, профессиональный, адаптивный к ситуации, помнящий контекст.
 """
     
     response = await get_ai_response(prompt, max_tokens=200)
