@@ -129,7 +129,7 @@ def analyze_speech_patterns(text: str) -> dict:
     }
     
     # Психологическая помощь
-    psychology_keywords = ['сон', 'сны', 'депрессия', 'тревога', 'стресс', 'паника', 'страх', 'грусть', 'одиночество', 'отношения', 'семья', 'родители', 'дети', 'любовь', 'развод', 'смерть', 'потеря', 'плохо', 'больно', 'страшно']
+    psychology_keywords = ['сон', 'сны', 'депрессия', 'тревога', 'стресс', 'паника', 'страх', 'грусть', 'одиночество', 'отношения', 'семья', 'родители', 'дети', 'любовь', 'развод', 'смерть', 'потеря', 'плохо', 'больно', 'страшно', 'семейная консультация', 'семейные отношения', 'семейные проблемы', 'консультация', 'психологическая поддержка']
     if any(keyword in text_lower for keyword in psychology_keywords):
         patterns['psychology_need'] = True
     
@@ -139,7 +139,7 @@ def analyze_speech_patterns(text: str) -> dict:
         patterns['career_need'] = True
     
     # Эмоциональная поддержка
-    emotional_keywords = ['одинок', 'грустно', 'плохо', 'устал', 'устала', 'сложно', 'трудно', 'помоги', 'поддержка', 'понимаю', 'понимаешь']
+    emotional_keywords = ['одинок', 'грустно', 'плохо', 'устал', 'устала', 'сложно', 'трудно', 'помоги', 'поддержка', 'понимаю', 'понимаешь', 'продолжим', 'давай', 'примеры', 'варианты']
     if any(keyword in text_lower for keyword in emotional_keywords):
         patterns['emotional_support'] = True
     
@@ -687,8 +687,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         return WAITING_MESSAGE
     
-    # Continue conversation with smart questions
-    if message_count in [3, 6, 8]:
+    # Continue conversation with smart questions (only if not in specific consultation mode)
+    # Также проверяем, не говорил ли пользователь о психологических темах в предыдущих сообщениях
+    has_psychology_context = False
+    if user.id in conversation_history and len(conversation_history[user.id]) > 1:
+        recent_messages = conversation_history[user.id][:-1]  # все кроме текущего
+        for msg in recent_messages[-3:]:  # проверяем последние 3 сообщения
+            msg_patterns = analyze_speech_patterns(msg)
+            if msg_patterns['psychology_need'] or msg_patterns['emotional_support']:
+                has_psychology_context = True
+                break
+    
+    if message_count in [3, 6, 8] and not patterns['psychology_need'] and not patterns['emotional_support'] and not has_psychology_context:
         # Ask professional questions to guide conversation
         questions = [
             "Расскажите о ваших главных целях в жизни. Что для вас важно?",
@@ -757,6 +767,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 - Поддерживай эмоционально
 - Мягко подводи к самоанализу
 - Если пользователь ссылается на предыдущее - обратись к контексту
+- НЕ переключайся на другие темы, если пользователь говорит о конкретной проблеме
 
 ФОРМАТ: Эмпатичный ответ (1-2 предложения) + релевантный вопрос.
 
