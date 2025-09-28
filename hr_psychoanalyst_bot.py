@@ -22,6 +22,13 @@ import openai
 from sentiment_analyzer import get_sentiment_analyzer
 from prompt_ab_testing import get_ab_testing_manager, PromptType
 
+# Продвинутые системы для максимальной точности
+from advanced_context_manager import context_manager, ContextEntry, UserProfile
+from response_quality_system import quality_analyzer, QualityMetric
+from model_optimization import model_optimizer, ModelType
+from feedback_improvement_system import feedback_system, FeedbackType, FeedbackSource
+from monitoring_analytics import monitoring_system, MetricType
+
 # ENV
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -325,21 +332,49 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
     
     return prompt, variant_id
 
-# OpenAI client
-async def get_ai_response(prompt: str, max_tokens: int = 1000) -> str:
+# OpenAI client с оптимизацией
+async def get_ai_response(prompt: str, max_tokens: int = 1000, 
+                         model_type: ModelType = ModelType.PSYCHOLOGY_CONSULTATION,
+                         user_id: int = None, context_data: Dict = None) -> Tuple[str, Dict[str, Any]]:
+    """Получает оптимизированный ответ ИИ с мониторингом"""
+    start_time = datetime.now()
+    
     try:
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
-            temperature=0.7,
-            timeout=60,
+        # Получаем оптимизированную конфигурацию
+        config = model_optimizer.get_optimized_config(model_type, context_data)
+        
+        # Генерируем ответ с оптимизированными параметрами
+        response_text, performance_metrics = await model_optimizer.generate_optimized_response(
+            prompt=prompt,
+            model_type=model_type,
+            user_context=context_data,
+            api_key=OPENAI_API_KEY
         )
-        return response.choices[0].message.content.strip()
+        
+        response_time = (datetime.now() - start_time).total_seconds()
+        
+        # Записываем метрики производительности
+        monitoring_system.record_metric(
+            metric_type=MetricType.RESPONSE_TIME,
+            value=response_time,
+            user_id=user_id,
+            context={'model_type': model_type.value, 'prompt_length': len(prompt)}
+        )
+        
+        return response_text, performance_metrics
+        
     except Exception as e:
         logger.error(f"OpenAI error: {e}")
-        return "Извините, произошла ошибка при обработке запроса. Попробуйте позже."
+        
+        # Записываем ошибку в метрики
+        monitoring_system.record_metric(
+            metric_type=MetricType.ERROR_RATE,
+            value=1.0,  # Ошибка
+            user_id=user_id,
+            context={'error': str(e), 'model_type': model_type.value}
+        )
+        
+        return "Извините, произошла ошибка при обработке запроса. Попробуйте позже.", {}
 
 # Main handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -348,6 +383,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Clear previous data
     user_data.pop(user.id, None)
     conversation_history.pop(user.id, None)
+    
+    # Создаем новую сессию для мониторинга
+    session_id = monitoring_system.start_session_monitoring(
+        session_id=f"{user.id}_{datetime.now().timestamp()}",
+        user_id=user.id
+    )
+    
+    # Инициализируем контекст пользователя
+    context_hash = context_manager.add_context_entry(
+        user_id=user.id,
+        message_type='system',
+        content='User started new session',
+        metadata={'session_id': session_id, 'action': 'start'}
+    )
     
     welcome_text = """
 🤗 **HR-Психоаналитик | Карьерный консультант**
@@ -500,6 +549,59 @@ async def show_ab_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         logger.error(f"Error showing AB stats: {e}")
         await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
 
+async def show_system_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать полную статистику системы (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        message = "🔧 **Полная статистика системы:**\n\n"
+        
+        # Статистика контекста
+        context_stats = context_manager.get_context_statistics()
+        message += "📝 **Контекст:**\n"
+        message += f"• Записей: {context_stats['total_entries']}\n"
+        message += f"• Пользователей: {context_stats['total_users']}\n"
+        message += f"• Сессий: {context_stats['total_sessions']}\n"
+        message += f"• Средняя важность: {context_stats['average_importance']:.2f}\n\n"
+        
+        # Статистика качества
+        quality_stats = quality_analyzer.get_quality_statistics()
+        message += "🎯 **Качество ответов:**\n"
+        message += f"• Средняя оценка: {quality_stats['average_score']:.2f}/1.0\n"
+        message += f"• Всего ответов: {quality_stats['total_responses']}\n"
+        message += f"• Лучший ответ: {quality_stats['max_score']:.2f}\n\n"
+        
+        # Статистика мониторинга
+        dashboard_data = monitoring_system.get_real_time_dashboard_data()
+        message += "📊 **Мониторинг:**\n"
+        message += f"• Статус: {dashboard_data['status'].upper()}\n"
+        message += f"• Критических алертов: {dashboard_data['alerts']['critical_count']}\n"
+        message += f"• Предупреждений: {dashboard_data['alerts']['warning_count']}\n\n"
+        
+        # Статистика обратной связи
+        feedback_stats = feedback_system.get_feedback_statistics(days=7)
+        message += "💬 **Обратная связь (7 дней):**\n"
+        message += f"• Всего отзывов: {feedback_stats['overall']['total_feedback']}\n"
+        message += f"• Средняя оценка: {feedback_stats['overall']['average_rating']:.2f}\n\n"
+        
+        # Рекомендации по улучшению
+        improvement_report = feedback_system.generate_improvement_report()
+        if improvement_report['recommendations']['immediate_actions']:
+            message += "⚡ **Немедленные действия:**\n"
+            for action in improvement_report['recommendations']['immediate_actions'][:3]:
+                message += f"• {action}\n"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Error showing system stats: {e}")
+        await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     text = update.message.text.strip()
@@ -507,6 +609,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not text:
         await update.message.reply_text("Пожалуйста, напишите что-то конкретное.")
         return WAITING_MESSAGE
+    
+    # Добавляем сообщение пользователя в контекст
+    context_hash = context_manager.add_context_entry(
+        user_id=user.id,
+        message_type='user',
+        content=text,
+        metadata={'message_length': len(text), 'timestamp': datetime.now().isoformat()}
+    )
     
     # Detect language
     language = detect_language(text)
@@ -622,17 +732,65 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if patterns['psychology_need'] or patterns['emotional_support']:
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
+        # Получаем релевантный контекст
+        relevant_context = context_manager.get_relevant_context(user.id, max_entries=10)
+        context_data = {
+            'user_id': user.id,
+            'conversation_history': conversation_history.get(user.id, []),
+            'relevant_context': [entry.content for entry in relevant_context],
+            'patterns': patterns
+        }
+        
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response, performance_metrics = await get_ai_response(
+            prompt=prompt, 
+            max_tokens=400,
+            model_type=ModelType.PSYCHOLOGY_CONSULTATION,
+            user_id=user.id,
+            context_data=context_data
+        )
+        
+        # Анализируем качество ответа
+        quality_score = quality_analyzer.analyze_response_quality(text, response, context_data)
         
         # Записываем результат A/B теста
-        quality_score = ab_testing_manager.evaluate_response_quality(text, response)
         ab_testing_manager.record_test_result(
             user_id=user.id,
             prompt_variant_id=variant_id,
             prompt_type=PromptType.PSYCHOLOGY_CONSULTATION,
-            response_quality=quality_score
+            response_quality=quality_score.overall_score
         )
+        
+        # Записываем метрики качества
+        monitoring_system.record_metric(
+            metric_type=MetricType.QUALITY_SCORE,
+            value=quality_score.overall_score,
+            user_id=user.id,
+            context={'model_type': 'psychology_consultation', 'quality_details': quality_score.metrics}
+        )
+        
+        # Добавляем ответ бота в контекст
+        context_manager.add_context_entry(
+            user_id=user.id,
+            message_type='bot',
+            content=response,
+            metadata={
+                'quality_score': quality_score.overall_score,
+                'model_type': 'psychology_consultation',
+                'response_time': performance_metrics.get('response_time', 0)
+            }
+        )
+        
+        # Обнаруживаем неявную обратную связь
+        implicit_feedback = feedback_system.detect_implicit_feedback(user.id, conversation_history.get(user.id, []), text)
+        for feedback_entry in implicit_feedback:
+            feedback_system.record_feedback(
+                user_id=feedback_entry.user_id,
+                feedback_type=feedback_entry.feedback_type,
+                source=feedback_entry.source,
+                value=feedback_entry.value,
+                context=feedback_entry.context
+            )
         
         await thinking_msg.delete()
         await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
@@ -871,6 +1029,7 @@ def main():
     application.add_handler(CommandHandler('clear', clear_memory))
     application.add_handler(CommandHandler('reset', reset_bot))
     application.add_handler(CommandHandler('stats', show_ab_stats))
+    application.add_handler(CommandHandler('system', show_system_stats))
     
     logger.info("HR-Психоаналитик запущен")
     application.run_polling()
