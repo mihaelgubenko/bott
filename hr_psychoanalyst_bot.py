@@ -3,8 +3,9 @@ import re
 import json
 import sqlite3
 import logging
-from datetime import datetime
-from typing import Tuple
+import asyncio
+from datetime import datetime, timedelta
+from typing import Tuple, List, Optional
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.constants import ParseMode
@@ -40,7 +41,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # States
-(WAITING_MESSAGE, IN_EXPRESS_ANALYSIS, IN_FULL_ANALYSIS, Q1, Q2, Q3, Q4, Q5, Q6, Q7) = range(10)
+(WAITING_MESSAGE, IN_EXPRESS_ANALYSIS, IN_FULL_ANALYSIS, Q1, Q2, Q3, Q4, Q5, Q6, Q7, 
+ CALENDAR_MENU, SCHEDULE_APPOINTMENT, CONFIRM_APPOINTMENT, MANAGE_APPOINTMENTS, 
+ CANCEL_APPOINTMENT, RESCHEDULE_APPOINTMENT, APPOINTMENT_DETAILS) = range(17)
 
 # Storage
 user_data = {}
@@ -65,6 +68,8 @@ PROFESSIONAL_QUESTIONS = [
 def init_database():
     conn = sqlite3.connect('psychoanalyst.db')
     cursor = conn.cursor()
+    
+    # Таблица клиентов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,6 +81,39 @@ def init_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Таблица записей на прием
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS appointments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER,
+            appointment_type TEXT,  -- 'consultation', 'analysis', 'follow_up'
+            scheduled_date TEXT,    -- YYYY-MM-DD
+            scheduled_time TEXT,    -- HH:MM
+            duration INTEGER DEFAULT 60,  -- минуты
+            status TEXT DEFAULT 'scheduled',  -- 'scheduled', 'completed', 'cancelled', 'rescheduled'
+            notes TEXT,
+            reminder_sent BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (telegram_id) REFERENCES clients (telegram_id)
+        )
+    ''')
+    
+    # Таблица уведомлений
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER,
+            appointment_id INTEGER,
+            notification_type TEXT,  -- 'reminder', 'confirmation', 'cancellation'
+            scheduled_time TIMESTAMP,
+            sent BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (telegram_id) REFERENCES clients (telegram_id),
+            FOREIGN KEY (appointment_id) REFERENCES appointments (id)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
@@ -97,6 +135,492 @@ def get_user_analyses(telegram_id: int):
     analyses = cursor.fetchall()
     conn.close()
     return analyses
+
+# Calendar and appointment functions
+def create_appointment(telegram_id: int, appointment_type: str, scheduled_date: str, 
+                      scheduled_time: str, duration: int = 60, notes: str = ""):
+    """Создать запись на прием"""
+    conn = sqlite3.connect('psychoanalyst.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO appointments 
+        (telegram_id, appointment_type, scheduled_date, scheduled_time, duration, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (telegram_id, appointment_type, scheduled_date, scheduled_time, duration, notes))
+    appointment_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return appointment_id
+
+def get_user_appointments(telegram_id: int, status: str = None):
+    """Получить записи пользователя"""
+    conn = sqlite3.connect('psychoanalyst.db')
+    cursor = conn.cursor()
+    
+    if status:
+        cursor.execute('''
+            SELECT * FROM appointments 
+            WHERE telegram_id = ? AND status = ? 
+            ORDER BY scheduled_date, scheduled_time
+        ''', (telegram_id, status))
+    else:
+        cursor.execute('''
+            SELECT * FROM appointments 
+            WHERE telegram_id = ? 
+            ORDER BY scheduled_date, scheduled_time
+        ''', (telegram_id,))
+    
+    appointments = cursor.fetchall()
+    conn.close()
+    return appointments
+
+def get_appointment_by_id(appointment_id: int):
+    """Получить запись по ID"""
+    conn = sqlite3.connect('psychoanalyst.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM appointments WHERE id = ?', (appointment_id,))
+    appointment = cursor.fetchone()
+    conn.close()
+    return appointment
+
+def update_appointment_status(appointment_id: int, status: str):
+    """Обновить статус записи"""
+    conn = sqlite3.connect('psychoanalyst.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE appointments 
+        SET status = ? 
+        WHERE id = ?
+    ''', (status, appointment_id))
+    conn.commit()
+    conn.close()
+
+def cancel_appointment(appointment_id: int):
+    """Отменить запись"""
+    update_appointment_status(appointment_id, 'cancelled')
+
+def reschedule_appointment(appointment_id: int, new_date: str, new_time: str):
+    """Перенести запись"""
+    conn = sqlite3.connect('psychoanalyst.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE appointments 
+        SET scheduled_date = ?, scheduled_time = ?, status = 'rescheduled'
+        WHERE id = ?
+    ''', (new_date, new_time, appointment_id))
+    conn.commit()
+    conn.close()
+
+def check_time_conflicts(telegram_id: int, date: str, time: str, duration: int = 60):
+    """Проверить конфликты времени"""
+    appointments = get_user_appointments(telegram_id, 'scheduled')
+    
+    for appointment in appointments:
+        if appointment[3] == date:  # scheduled_date
+            existing_time = appointment[4]  # scheduled_time
+            existing_duration = appointment[5]  # duration
+            
+            # Простая проверка пересечения времени
+            existing_start = datetime.strptime(f"{date} {existing_time}", "%Y-%m-%d %H:%M")
+            existing_end = existing_start + timedelta(minutes=existing_duration)
+            
+            new_start = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+            new_end = new_start + timedelta(minutes=duration)
+            
+            if (new_start < existing_end and new_end > existing_start):
+                return True, appointment
+    
+    return False, None
+
+def get_available_slots(date: str):
+    """Получить доступные слоты на дату"""
+    # Рабочие часы: 9:00 - 18:00
+    work_hours = []
+    for hour in range(9, 18):
+        for minute in [0, 30]:
+            time_str = f"{hour:02d}:{minute:02d}"
+            work_hours.append(time_str)
+    
+    return work_hours
+
+def format_appointment(appointment):
+    """Форматировать запись для отображения"""
+    appointment_types = {
+        'consultation': 'Консультация',
+        'analysis': 'Психоанализ',
+        'follow_up': 'Повторный прием'
+    }
+    
+    status_emoji = {
+        'scheduled': '📅',
+        'completed': '✅',
+        'cancelled': '❌',
+        'rescheduled': '🔄'
+    }
+    
+    status_text = {
+        'scheduled': 'Запланировано',
+        'completed': 'Завершено',
+        'cancelled': 'Отменено',
+        'rescheduled': 'Перенесено'
+    }
+    
+    return f"""
+{status_emoji.get(appointment[6], '📅')} **{appointment_types.get(appointment[2], 'Прием')}**
+📅 Дата: {appointment[3]}
+🕐 Время: {appointment[4]}
+⏱️ Длительность: {appointment[5]} мин
+📝 Статус: {status_text.get(appointment[6], 'Неизвестно')}
+{f'💬 Заметки: {appointment[7]}' if appointment[7] else ''}
+"""
+
+# Smart Secretary functions
+def parse_appointment_request(text: str) -> dict:
+    """Парсинг запроса на запись от пользователя"""
+    text_lower = text.lower()
+    
+    # Типы приемов
+    appointment_types = {
+        'консультация': 'consultation',
+        'анализ': 'analysis', 
+        'психоанализ': 'analysis',
+        'повторный': 'follow_up',
+        'встреча': 'consultation'
+    }
+    
+    # Извлечение типа приема
+    appointment_type = 'consultation'  # по умолчанию
+    for keyword, apt_type in appointment_types.items():
+        if keyword in text_lower:
+            appointment_type = apt_type
+            break
+    
+    # Извлечение даты
+    date_patterns = [
+        r'(\d{1,2})[./](\d{1,2})[./](\d{4})',  # DD.MM.YYYY или DD/MM/YYYY
+        r'(\d{1,2})[./](\d{1,2})',  # DD.MM (текущий год)
+        r'завтра', r'послезавтра', r'сегодня',
+        r'понедельник', r'вторник', r'среда', r'четверг', r'пятница', r'суббота', r'воскресенье'
+    ]
+    
+    date = None
+    for pattern in date_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            if 'завтра' in text_lower:
+                date = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+            elif 'послезавтра' in text_lower:
+                date = (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')
+            elif 'сегодня' in text_lower:
+                date = datetime.now().strftime('%Y-%m-%d')
+            elif any(day in text_lower for day in ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье']):
+                # Простая логика для дней недели (следующая неделя)
+                days_ahead = {
+                    'понедельник': 0, 'вторник': 1, 'среда': 2, 'четверг': 3,
+                    'пятница': 4, 'суббота': 5, 'воскресенье': 6
+                }
+                target_day = next(day for day in days_ahead if day in text_lower)
+                today = datetime.now().weekday()
+                days_until = (days_ahead[target_day] - today) % 7
+                if days_until == 0:  # если сегодня этот день
+                    days_until = 7
+                date = (datetime.now() + timedelta(days=days_until)).strftime('%Y-%m-%d')
+            elif len(match.groups()) >= 2:
+                day, month = match.groups()[:2]
+                year = match.groups()[2] if len(match.groups()) > 2 else str(datetime.now().year)
+                try:
+                    date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                except:
+                    pass
+            break
+    
+    # Извлечение времени
+    time_patterns = [
+        r'(\d{1,2}):(\d{2})',  # HH:MM
+        r'(\d{1,2})[.\s](\d{2})',  # HH.MM или HH MM
+        r'в (\d{1,2})',  # в 14
+        r'(\d{1,2}) часов',  # 14 часов
+    ]
+    
+    time = None
+    for pattern in time_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            if len(match.groups()) >= 2:
+                hour, minute = match.groups()[:2]
+                time = f"{hour.zfill(2)}:{minute.zfill(2)}"
+            elif len(match.groups()) == 1:
+                hour = match.groups()[0]
+                time = f"{hour.zfill(2)}:00"
+            break
+    
+    # Извлечение заметок
+    notes = ""
+    if 'заметка' in text_lower or 'комментарий' in text_lower:
+        # Простое извлечение текста после ключевых слов
+        for keyword in ['заметка', 'комментарий', 'примечание']:
+            if keyword in text_lower:
+                idx = text_lower.find(keyword)
+                notes = text[idx + len(keyword):].strip()
+                break
+    
+    return {
+        'type': appointment_type,
+        'date': date,
+        'time': time,
+        'notes': notes,
+        'original_text': text
+    }
+
+def suggest_alternatives(telegram_id: int, requested_date: str, requested_time: str) -> List[dict]:
+    """Предложить альтернативные варианты времени"""
+    suggestions = []
+    
+    # Проверяем доступные слоты на запрашиваемую дату
+    available_slots = get_available_slots(requested_date)
+    
+    # Фильтруем занятые слоты
+    appointments = get_user_appointments(telegram_id, 'scheduled')
+    occupied_times = []
+    for apt in appointments:
+        if apt[3] == requested_date:  # scheduled_date
+            occupied_times.append(apt[4])  # scheduled_time
+    
+    free_slots = [slot for slot in available_slots if slot not in occupied_times]
+    
+    # Предлагаем ближайшие свободные слоты
+    for slot in free_slots[:5]:  # максимум 5 вариантов
+        suggestions.append({
+            'date': requested_date,
+            'time': slot,
+            'type': 'consultation'
+        })
+    
+    # Если на эту дату нет свободных слотов, предлагаем следующие дни
+    if not suggestions:
+        for days_ahead in range(1, 8):  # следующие 7 дней
+            next_date = (datetime.strptime(requested_date, '%Y-%m-%d') + timedelta(days=days_ahead)).strftime('%Y-%m-%d')
+            next_slots = get_available_slots(next_date)
+            next_appointments = get_user_appointments(telegram_id, 'scheduled')
+            next_occupied = [apt[4] for apt in next_appointments if apt[3] == next_date]
+            next_free = [slot for slot in next_slots if slot not in next_occupied]
+            
+            if next_free:
+                suggestions.append({
+                    'date': next_date,
+                    'time': next_free[0],
+                    'type': 'consultation'
+                })
+                if len(suggestions) >= 3:  # максимум 3 альтернативы
+                    break
+    
+    return suggestions
+
+def check_recurring_appointments(telegram_id: int) -> List[dict]:
+    """Проверить повторяющиеся записи"""
+    appointments = get_user_appointments(telegram_id, 'scheduled')
+    recurring = []
+    
+    # Группируем по типу и времени
+    groups = {}
+    for apt in appointments:
+        key = (apt[2], apt[4])  # type, time
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(apt)
+    
+    # Находим группы с одинаковым временем
+    for key, group in groups.items():
+        if len(group) > 1:
+            recurring.append({
+                'type': key[0],
+                'time': key[1],
+                'count': len(group),
+                'appointments': group
+            })
+    
+    return recurring
+
+def generate_smart_response(telegram_id: int, user_message: str) -> str:
+    """Генерировать умный ответ секретаря"""
+    parsed = parse_appointment_request(user_message)
+    
+    # Если есть конфликт времени
+    if parsed['date'] and parsed['time']:
+        has_conflict, conflicting_apt = check_time_conflicts(
+            telegram_id, parsed['date'], parsed['time']
+        )
+        
+        if has_conflict:
+            suggestions = suggest_alternatives(telegram_id, parsed['date'], parsed['time'])
+            
+            response = f"❌ **Конфликт времени!**\n\n"
+            response += f"У вас уже есть запись на {parsed['date']} в {parsed['time']}:\n"
+            response += format_appointment(conflicting_apt)
+            response += "\n🔄 **Предлагаю альтернативы:**\n\n"
+            
+            for i, suggestion in enumerate(suggestions[:3], 1):
+                response += f"{i}. {suggestion['date']} в {suggestion['time']}\n"
+            
+            response += "\nВыберите подходящий вариант или предложите другое время."
+            return response
+    
+    # Если все хорошо, подтверждаем
+    if parsed['date'] and parsed['time']:
+        response = f"✅ **Отлично!** Записываю вас на:\n\n"
+        response += f"📅 Дата: {parsed['date']}\n"
+        response += f"🕐 Время: {parsed['time']}\n"
+        response += f"📝 Тип: {parsed['type']}\n"
+        
+        if parsed['notes']:
+            response += f"💬 Заметки: {parsed['notes']}\n"
+        
+        response += "\nПодтверждаете запись?"
+        return response
+    
+    # Если не хватает информации
+    missing = []
+    if not parsed['date']:
+        missing.append("дату")
+    if not parsed['time']:
+        missing.append("время")
+    
+    if missing:
+        response = f"🤔 **Нужна дополнительная информация:**\n\n"
+        response += f"Пожалуйста, укажите {' и '.join(missing)} для записи.\n\n"
+        response += "**Примеры:**\n"
+        response += "• Завтра в 14:00\n"
+        response += "• 15.12.2024 в 10:30\n"
+        response += "• Пятница в 16:00\n"
+        return response
+    
+    return "Не понял ваш запрос. Попробуйте еще раз."
+
+# Notification system
+def create_notification(telegram_id: int, appointment_id: int, notification_type: str, scheduled_time: datetime):
+    """Создать уведомление"""
+    conn = sqlite3.connect('psychoanalyst.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO notifications 
+        (telegram_id, appointment_id, notification_type, scheduled_time)
+        VALUES (?, ?, ?, ?)
+    ''', (telegram_id, appointment_id, notification_type, scheduled_time))
+    conn.commit()
+    conn.close()
+
+def get_pending_notifications():
+    """Получить уведомления для отправки"""
+    conn = sqlite3.connect('psychoanalyst.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT n.*, a.scheduled_date, a.scheduled_time, a.appointment_type
+        FROM notifications n
+        JOIN appointments a ON n.appointment_id = a.id
+        WHERE n.sent = FALSE AND n.scheduled_time <= ?
+        ORDER BY n.scheduled_time
+    ''', (datetime.now(),))
+    notifications = cursor.fetchall()
+    conn.close()
+    return notifications
+
+def mark_notification_sent(notification_id: int):
+    """Отметить уведомление как отправленное"""
+    conn = sqlite3.connect('psychoanalyst.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE notifications SET sent = TRUE WHERE id = ?', (notification_id,))
+    conn.commit()
+    conn.close()
+
+async def send_appointment_reminder(application, telegram_id: int, appointment):
+    """Отправить напоминание о записи"""
+    appointment_types = {
+        'consultation': 'Консультация',
+        'analysis': 'Психоанализ',
+        'follow_up': 'Повторный прием'
+    }
+    
+    reminder_text = f"""
+🔔 **Напоминание о записи**
+
+📅 **{appointment_types.get(appointment[2], 'Прием')}**
+📅 Дата: {appointment[3]}
+🕐 Время: {appointment[4]}
+⏱️ Длительность: {appointment[5]} мин
+
+До встречи остался 1 час! 
+Буду ждать вас! 🤗
+"""
+    
+    try:
+        await application.bot.send_message(
+            chat_id=telegram_id,
+            text=reminder_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Error sending reminder to {telegram_id}: {e}")
+        return False
+
+async def send_appointment_confirmation(application, telegram_id: int, appointment):
+    """Отправить подтверждение записи"""
+    confirmation_text = f"""
+✅ **Запись подтверждена!**
+
+📅 Дата: {appointment[3]}
+🕐 Время: {appointment[4]}
+📝 Тип: {appointment[2]}
+
+Я напомню вам за час до встречи! 
+Если нужно что-то изменить - просто напишите.
+"""
+    
+    try:
+        await application.bot.send_message(
+            chat_id=telegram_id,
+            text=confirmation_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Error sending confirmation to {telegram_id}: {e}")
+        return False
+
+async def process_notifications(application):
+    """Обработать все уведомления"""
+    notifications = get_pending_notifications()
+    
+    for notification in notifications:
+        notification_id = notification[0]
+        telegram_id = notification[1]
+        appointment_id = notification[2]
+        notification_type = notification[3]
+        appointment = (appointment_id, telegram_id, notification[7], notification[8], notification[9], notification[10], notification[11], notification[12])
+        
+        success = False
+        
+        if notification_type == 'reminder':
+            success = await send_appointment_reminder(application, telegram_id, appointment)
+        elif notification_type == 'confirmation':
+            success = await send_appointment_confirmation(application, telegram_id, appointment)
+        
+        if success:
+            mark_notification_sent(notification_id)
+            logger.info(f"Notification {notification_id} sent successfully")
+
+def schedule_appointment_notifications(appointment_id: int, telegram_id: int, appointment_date: str, appointment_time: str):
+    """Запланировать уведомления для записи"""
+    # Создаем datetime объект для записи
+    appointment_datetime = datetime.strptime(f"{appointment_date} {appointment_time}", "%Y-%m-%d %H:%M")
+    
+    # Уведомление за час до встречи
+    reminder_time = appointment_datetime - timedelta(hours=1)
+    if reminder_time > datetime.now():
+        create_notification(telegram_id, appointment_id, 'reminder', reminder_time)
+    
+    # Подтверждение сразу после создания записи
+    create_notification(telegram_id, appointment_id, 'confirmation', datetime.now())
 
 # Language detection
 def detect_language(text: str) -> str:
@@ -386,9 +910,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 • Детальный профиль личности
 • Персональные рекомендации по развитию
 
+**📅 Календарь и записи:**
+• Записаться на прием
+• Посмотреть свои записи
+• Отменить или перенести встречу
+• Умный секретарь для управления
+
 **Команды:**
 /start - начать общение
 /help - эта справка
+/calendar - календарь и записи
 /cancel - отменить текущий процесс
 /reset - сбросить бота
 /stats - статистика (только админ)
@@ -401,6 +932,176 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 **Все конфиденциально и анонимно!** 💙
 """
     await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
+
+# Calendar handlers
+async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Показать меню календаря"""
+    user = update.effective_user
+    
+    calendar_text = """
+📅 **Календарь и записи**
+
+Выберите действие:
+
+🔹 **Записаться на прием** - создать новую запись
+🔹 **Мои записи** - посмотреть все записи
+🔹 **Отменить запись** - отменить встречу
+🔹 **Перенести запись** - изменить время
+🔹 **Повторяющиеся записи** - проверить дубликаты
+
+**Или просто напишите:**
+• "Завтра в 14:00" - для быстрой записи
+• "Отменить встречу" - для отмены
+• "Перенести на пятницу" - для переноса
+
+Я умный секретарь и понимаю естественную речь! 🤖
+"""
+    
+    await update.message.reply_text(calendar_text, parse_mode=ParseMode.MARKDOWN)
+    return CALENDAR_MENU
+
+async def schedule_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Записаться на прием"""
+    user = update.effective_user
+    user_message = update.message.text
+    
+    # Используем умного секретаря для парсинга
+    smart_response = generate_smart_response(user.id, user_message)
+    
+    # Сохраняем данные для подтверждения
+    parsed = parse_appointment_request(user_message)
+    if parsed['date'] and parsed['time']:
+        context.user_data['pending_appointment'] = parsed
+    
+    await update.message.reply_text(smart_response, parse_mode=ParseMode.MARKDOWN)
+    
+    if parsed['date'] and parsed['time'] and not check_time_conflicts(user.id, parsed['date'], parsed['time'])[0]:
+        return CONFIRM_APPOINTMENT
+    else:
+        return CALENDAR_MENU
+
+async def confirm_appointment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Подтвердить запись"""
+    user = update.effective_user
+    user_message = update.message.text.lower()
+    
+    if any(word in user_message for word in ['да', 'давай', 'подтверждаю', 'согласен', 'ок', 'хорошо']):
+        if 'pending_appointment' in context.user_data:
+            apt_data = context.user_data['pending_appointment']
+            
+            # Создаем запись
+            appointment_id = create_appointment(
+                user.id,
+                apt_data['type'],
+                apt_data['date'],
+                apt_data['time'],
+                60,  # длительность по умолчанию
+                apt_data['notes']
+            )
+            
+            # Планируем уведомления
+            schedule_appointment_notifications(appointment_id, user.id, apt_data['date'], apt_data['time'])
+            
+            confirmation_text = f"""
+✅ **Запись подтверждена!**
+
+📅 Дата: {apt_data['date']}
+🕐 Время: {apt_data['time']}
+📝 Тип: {apt_data['type']}
+🆔 ID записи: {appointment_id}
+
+Я напомню вам за час до встречи! 
+
+Что-то еще могу помочь? 🤗
+"""
+            await update.message.reply_text(confirmation_text, parse_mode=ParseMode.MARKDOWN)
+            
+            # Очищаем временные данные
+            context.user_data.pop('pending_appointment', None)
+            
+        else:
+            await update.message.reply_text("❌ Нет данных для подтверждения. Попробуйте записаться заново.")
+    
+    elif any(word in user_message for word in ['нет', 'отмена', 'отменить', 'не хочу']):
+        await update.message.reply_text("❌ Запись отменена. Могу помочь с чем-то еще?")
+        context.user_data.pop('pending_appointment', None)
+    
+    else:
+        await update.message.reply_text("Пожалуйста, ответьте 'да' для подтверждения или 'нет' для отмены.")
+        return CONFIRM_APPOINTMENT
+    
+    return CALENDAR_MENU
+
+async def show_appointments(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Показать записи пользователя"""
+    user = update.effective_user
+    appointments = get_user_appointments(user.id)
+    
+    if not appointments:
+        await update.message.reply_text("📅 У вас пока нет записей.\n\nХотите записаться на прием?")
+        return CALENDAR_MENU
+    
+    appointments_text = "📅 **Ваши записи:**\n\n"
+    
+    for i, appointment in enumerate(appointments, 1):
+        appointments_text += f"**{i}.** {format_appointment(appointment)}\n"
+    
+    appointments_text += "\nЧто хотите сделать с записями?"
+    
+    await update.message.reply_text(appointments_text, parse_mode=ParseMode.MARKDOWN)
+    return MANAGE_APPOINTMENTS
+
+async def cancel_appointment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработчик отмены записи"""
+    user = update.effective_user
+    user_message = update.message.text
+    
+    # Ищем номер записи в сообщении
+    import re
+    numbers = re.findall(r'\d+', user_message)
+    
+    if numbers:
+        appointment_id = int(numbers[0])
+        appointment = get_appointment_by_id(appointment_id)
+        
+        if appointment and appointment[1] == user.id:  # проверяем владельца
+            cancel_appointment(appointment_id)
+            await update.message.reply_text(f"✅ Запись #{appointment_id} отменена.")
+        else:
+            await update.message.reply_text("❌ Запись не найдена или не принадлежит вам.")
+    else:
+        # Показываем записи для выбора
+        appointments = get_user_appointments(user.id, 'scheduled')
+        if appointments:
+            appointments_text = "📅 **Выберите запись для отмены:**\n\n"
+            for i, appointment in enumerate(appointments, 1):
+                appointments_text += f"**{i}.** {format_appointment(appointment)}\n"
+            appointments_text += "\nНапишите номер записи для отмены."
+            await update.message.reply_text(appointments_text, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.message.reply_text("📅 У вас нет активных записей для отмены.")
+    
+    return CALENDAR_MENU
+
+async def check_recurring_appointments_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Проверить повторяющиеся записи"""
+    user = update.effective_user
+    recurring = check_recurring_appointments(user.id)
+    
+    if not recurring:
+        await update.message.reply_text("✅ Повторяющихся записей не найдено.")
+    else:
+        recurring_text = "⚠️ **Найдены повторяющиеся записи:**\n\n"
+        for group in recurring:
+            recurring_text += f"🔄 **{group['type']}** в {group['time']} - {group['count']} записей\n"
+            for apt in group['appointments']:
+                recurring_text += f"   • {apt[3]} (ID: {apt[0]})\n"
+            recurring_text += "\n"
+        
+        recurring_text += "Рекомендую проверить и отменить дубликаты."
+        await update.message.reply_text(recurring_text, parse_mode=ParseMode.MARKDOWN)
+    
+    return CALENDAR_MENU
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -513,6 +1214,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if language != 'ru':
         await update.message.reply_text("Я работаю только на русском языке. Пожалуйста, напишите на русском.")
         return WAITING_MESSAGE
+    
+    # Handle calendar-related messages
+    calendar_keywords = [
+        'записаться', 'запись', 'встреча', 'прием', 'календарь', 'расписание',
+        'отменить', 'перенести', 'время', 'дата', 'завтра', 'послезавтра',
+        'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'
+    ]
+    
+    if any(keyword in text.lower() for keyword in calendar_keywords):
+        # Проверяем, это запрос на запись или управление
+        if any(word in text.lower() for word in ['записаться', 'запись', 'встреча', 'прием']):
+            return await schedule_appointment(update, context)
+        elif any(word in text.lower() for word in ['мои записи', 'показать записи', 'список записей']):
+            return await show_appointments(update, context)
+        elif any(word in text.lower() for word in ['отменить', 'отмена']):
+            return await cancel_appointment_handler(update, context)
+        elif any(word in text.lower() for word in ['перенести', 'перенос']):
+            return await check_recurring_appointments_handler(update, context)
+        else:
+            # Общий календарный запрос - показываем меню
+            return await calendar_command(update, context)
     
     # Analyze speech patterns
     patterns = analyze_speech_patterns(text)
@@ -860,6 +1582,28 @@ def main():
             Q5: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_full_analysis_answer)],
             Q6: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_full_analysis_answer)],
             Q7: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_full_analysis_answer)],
+            # Calendar states
+            CALENDAR_MENU: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
+            SCHEDULE_APPOINTMENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, schedule_appointment),
+            ],
+            CONFIRM_APPOINTMENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_appointment),
+            ],
+            MANAGE_APPOINTMENTS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
+            CANCEL_APPOINTMENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cancel_appointment_handler),
+            ],
+            RESCHEDULE_APPOINTMENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
+            APPOINTMENT_DETAILS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
+            ],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
         allow_reentry=True,
@@ -868,9 +1612,24 @@ def main():
     # Add handlers
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler('calendar', calendar_command))
     application.add_handler(CommandHandler('clear', clear_memory))
     application.add_handler(CommandHandler('reset', reset_bot))
     application.add_handler(CommandHandler('stats', show_ab_stats))
+    
+    # Schedule notification processing
+    async def notification_job():
+        while True:
+            try:
+                await process_notifications(application)
+                await asyncio.sleep(60)  # Check every minute
+            except Exception as e:
+                logger.error(f"Error in notification job: {e}")
+                await asyncio.sleep(60)
+    
+    # Start notification job in background
+    import asyncio
+    asyncio.create_task(notification_job())
     
     logger.info("HR-Психоаналитик запущен")
     application.run_polling()
