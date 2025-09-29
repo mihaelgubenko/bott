@@ -21,6 +21,7 @@ import openai
 # Новые модули для ИИ-улучшений
 from sentiment_analyzer import get_sentiment_analyzer
 from prompt_ab_testing import get_ab_testing_manager, PromptType
+from token_config import get_token_limit, should_warn_usage, get_warning_message, TOKEN_LIMITS, DAILY_LIMITS
 
 # ENV
 load_dotenv()
@@ -45,6 +46,15 @@ logger = logging.getLogger(__name__)
 # Storage
 user_data = {}
 conversation_history = {}
+
+# Token monitoring
+token_usage_stats = {
+    'total_tokens_used': 0,
+    'requests_count': 0,
+    'avg_tokens_per_request': 0,
+    'daily_limit': DAILY_LIMITS['premium_tier'],  # Используем конфигурацию
+    'current_daily_usage': 0
+}
 
 # ИИ модули
 sentiment_analyzer = get_sentiment_analyzer()
@@ -200,7 +210,7 @@ def get_express_analysis_prompt(conversation: str, message_count: int, user_id: 
 🎓 Рекомендации по обучению: [конкретные направления]
 ⚠️ Зоны развития: [что стоит развивать]
 
-СТИЛЬ: Профессиональный, эмпатичный, конкретный. Максимум 300 слов.
+СТИЛЬ: Профессиональный, эмпатичный, конкретный. Максимум 200 слов.
 """
         variant_id = "default"
     
@@ -253,7 +263,7 @@ def get_full_analysis_prompt(answers: list) -> str:
 - Ключевые точки роста
 - Рекомендации по саморазвитию
 
-СТИЛЬ: Профессиональный, детальный, практичный. 800-1200 слов.
+СТИЛЬ: Профессиональный, детальный, практичный. 600-800 слов.
 """
 
 def get_psychology_consultation_prompt(user_message: str, user_id: int, conversation_history: list = None) -> Tuple[str, str]:
@@ -291,7 +301,7 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
 🤗 Поддержка и принятие
 💡 Мягкие рекомендации (если уместно)
 
-СТИЛЬ: Теплый, понимающий, как разговор с близким другом, который помнит всё. 150-300 слов.
+СТИЛЬ: Теплый, понимающий, как разговор с близким другом, который помнит всё. 100-200 слов.
 """
         variant_id = "default"
     
@@ -325,9 +335,25 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
     
     return prompt, variant_id
 
-# OpenAI client
-async def get_ai_response(prompt: str, max_tokens: int = 1000) -> str:
+# OpenAI client with dynamic token management and monitoring
+async def get_ai_response(prompt: str, max_tokens: int = None, response_type: str = "default") -> str:
     try:
+        # Проверяем дневной лимит токенов
+        if token_usage_stats['current_daily_usage'] >= token_usage_stats['daily_limit']:
+            logger.warning("Daily token limit reached!")
+            return "Извините, достигнут дневной лимит запросов. Попробуйте завтра."
+        
+        # Динамические лимиты токенов с использованием конфигурации
+        if max_tokens is None:
+            usage_ratio = token_usage_stats['current_daily_usage'] / token_usage_stats['daily_limit']
+            max_tokens = get_token_limit(response_type, usage_ratio)
+        
+        # Ограничиваем максимальный лимит для экономии
+        max_tokens = min(max_tokens, 500)
+        
+        # Подсчитываем примерное количество токенов в промпте (примерно 4 символа = 1 токен)
+        prompt_tokens = len(prompt) // 4
+        
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
         response = client.chat.completions.create(
             model="gpt-4",
@@ -336,6 +362,16 @@ async def get_ai_response(prompt: str, max_tokens: int = 1000) -> str:
             temperature=0.7,
             timeout=60,
         )
+        
+        # Обновляем статистику использования токенов
+        total_tokens_used = prompt_tokens + max_tokens
+        token_usage_stats['total_tokens_used'] += total_tokens_used
+        token_usage_stats['current_daily_usage'] += total_tokens_used
+        token_usage_stats['requests_count'] += 1
+        token_usage_stats['avg_tokens_per_request'] = token_usage_stats['total_tokens_used'] / token_usage_stats['requests_count']
+        
+        logger.info(f"Token usage: {total_tokens_used} tokens (prompt: {prompt_tokens}, response: {max_tokens})")
+        
         return response.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"OpenAI error: {e}")
@@ -391,7 +427,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /help - эта справка
 /cancel - отменить текущий процесс
 /reset - сбросить бота
-/stats - статистика (только админ)
+/stats - статистика A/B тестов (только админ)
+/tokens - статистика токенов (только админ)
 
 **🤖 ИИ-возможности:**
 • Анализ эмоций и настроения в реальном времени
@@ -459,6 +496,23 @@ async def reset_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Все ваши данные очищены. Начните заново с /start"
     )
 
+async def reset_daily_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Сбросить дневной лимит токенов (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа (можно настроить)
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    # Сброс дневного лимита
+    token_usage_stats['current_daily_usage'] = 0
+    
+    await update.message.reply_text(
+        "🔄 **Дневной лимит токенов сброшен!**\n\n"
+        "Теперь можно использовать полный лимит токенов заново."
+    )
+
 async def show_ab_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показать статистику A/B тестирования (только для админов)"""
     user = update.effective_user
@@ -499,6 +553,44 @@ async def show_ab_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except Exception as e:
         logger.error(f"Error showing AB stats: {e}")
         await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
+
+async def show_token_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать статистику использования токенов (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа (можно настроить)
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        usage_ratio = token_usage_stats['current_daily_usage'] / token_usage_stats['daily_limit']
+        
+        message = "🔢 **Статистика токенов:**\n\n"
+        message += f"📊 **Использование за день:**\n"
+        message += f"• Использовано: {token_usage_stats['current_daily_usage']:,} токенов\n"
+        message += f"• Лимит: {token_usage_stats['daily_limit']:,} токенов\n"
+        message += f"• Процент: {usage_ratio:.1%}\n\n"
+        
+        message += f"📈 **Общая статистика:**\n"
+        message += f"• Всего токенов: {token_usage_stats['total_tokens_used']:,}\n"
+        message += f"• Запросов: {token_usage_stats['requests_count']}\n"
+        message += f"• Среднее на запрос: {token_usage_stats['avg_tokens_per_request']:.0f}\n\n"
+        
+        # Предупреждения с использованием конфигурации
+        warning_msg = get_warning_message(usage_ratio)
+        if warning_msg:
+            message += f"**{warning_msg}**\n"
+        
+        # Рекомендации по оптимизации
+        if token_usage_stats['avg_tokens_per_request'] > 300:
+            message += "💡 **Рекомендация:** Рассмотрите сокращение промптов\n"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Error showing token stats: {e}")
+        await update.message.reply_text(f"❌ Ошибка при получении статистики токенов: {e}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -574,7 +666,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         # Используем полный контекст для понимания ссылки
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, response_type="psychology_consultation")
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(text, response)
@@ -623,7 +715,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, response_type="psychology_consultation")
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(text, response)
@@ -650,7 +742,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         conversation_text = " ".join(conversation_history[user.id])
         prompt, variant_id = get_express_analysis_prompt(conversation_text, message_count, user.id)
-        response = await get_ai_response(prompt, max_tokens=400)
+        response = await get_ai_response(prompt, response_type="express_analysis")
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(conversation_text, response)
@@ -763,7 +855,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 СТИЛЬ: Теплый, профессиональный, адаптивный к ситуации, помнящий контекст.
 """
     
-    response = await get_ai_response(prompt, max_tokens=200)
+    response = await get_ai_response(prompt, response_type="smart_response")
     await thinking_msg.delete()
     await update.message.reply_text(response)
     return WAITING_MESSAGE
@@ -807,7 +899,7 @@ async def handle_full_analysis_answer(update: Update, context: ContextTypes.DEFA
         )
         
         prompt = get_full_analysis_prompt(answers)
-        response = await get_ai_response(prompt, max_tokens=1500)
+        response = await get_ai_response(prompt, response_type="full_analysis")
         
         await thinking_msg.delete()  # Удаляем сообщение "Провожу анализ..."
         
@@ -871,6 +963,8 @@ def main():
     application.add_handler(CommandHandler('clear', clear_memory))
     application.add_handler(CommandHandler('reset', reset_bot))
     application.add_handler(CommandHandler('stats', show_ab_stats))
+    application.add_handler(CommandHandler('tokens', show_token_stats))
+    application.add_handler(CommandHandler('reset_tokens', reset_daily_tokens))
     
     logger.info("HR-Психоаналитик запущен")
     application.run_polling()
