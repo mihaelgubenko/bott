@@ -256,6 +256,61 @@ def get_full_analysis_prompt(answers: list) -> str:
 СТИЛЬ: Профессиональный, детальный, практичный. 800-1200 слов.
 """
 
+async def analyze_user_intent_ai(text: str, conversation_history: list = None) -> dict:
+    """Анализ намерений пользователя через ИИ для более точного понимания контекста"""
+    
+    # Подготавливаем контекст разговора
+    context = ""
+    if conversation_history and len(conversation_history) > 1:
+        recent_messages = conversation_history[-5:] if len(conversation_history) > 5 else conversation_history[:-1]
+        context = "Предыдущие сообщения:\n" + "\n".join([f"- {msg}" for msg in recent_messages])
+    else:
+        context = "Это первое сообщение в разговоре."
+    
+    prompt = f"""
+Ты — эксперт по анализу намерений в диалогах с психологом.
+
+КОНТЕКСТ РАЗГОВОРА:
+{context}
+
+ТЕКУЩЕЕ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ:
+"{text}"
+
+ЗАДАЧА: Определи истинные намерения пользователя.
+
+КРИТИЧЕСКИ ВАЖНО - РАЗЛИЧАЙ КОНТЕКСТЫ:
+- "достаточно" в контексте "возможно этого будет достаточно" = НЕ хочет завершать разговор
+- "достаточно" в контексте "хватит говорить" = хочет завершить разговор  
+- "можем поговорить ещё" = хочет продолжить разговор
+- "спроси меня вопросы" = просит руководства и помощи
+- "не понял" = замешан, нужна помощь и объяснение
+- "короткий диалог" = хочет продолжить, а не завершить
+
+АНАЛИЗИРУЙ:
+1. Хочет ли завершить разговор? (true/false)
+2. Хочет ли продолжить разговор? (true/false)
+3. Нужна ли помощь/руководство? (true/false)
+4. Эмоциональное состояние: (positive/neutral/negative/confused)
+
+Ответ ТОЛЬКО в JSON формате:
+{{"wants_to_stop": boolean, "wants_to_continue": boolean, "needs_guidance": boolean, "mood": "string"}}
+"""
+    
+    try:
+        response = await get_ai_response(prompt, max_tokens=150)
+        # Парсим JSON ответ
+        result = json.loads(response)
+        return result
+    except Exception as e:
+        logger.error(f"Error in intent analysis: {e}")
+        # Fallback - безопасные значения по умолчанию
+        return {
+            "wants_to_stop": False, 
+            "wants_to_continue": True, 
+            "needs_guidance": False, 
+            "mood": "neutral"
+        }
+
 def get_psychology_consultation_prompt(user_message: str, user_id: int, conversation_history: list = None) -> Tuple[str, str]:
     """Получить промпт для психологической консультации с учетом A/B тестирования и анализа настроения"""
     # Анализ настроения пользователя
@@ -527,8 +582,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if len(conversation_history[user.id]) > 15:
         conversation_history[user.id] = conversation_history[user.id][-15:]
     
-    # Handle cancellation
-    if patterns['cancellation']:
+    # Улучшенный анализ намерений через ИИ
+    intent = await analyze_user_intent_ai(text, conversation_history.get(user.id, []))
+    
+    # Handle cancellation - только если ИИ определил желание завершить
+    if intent['wants_to_stop']:
         await update.message.reply_text(
             "Понял. Если захотите поговорить снова - просто напишите. "
             "Я всегда готов выслушать и поддержать. 💙"
@@ -537,6 +595,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_data.pop(user.id, None)
         conversation_history.pop(user.id, None)
         return ConversationHandler.END
+    
+    # Handle desire to continue conversation
+    if intent['wants_to_continue']:
+        await update.message.reply_text(
+            "Конечно! Я рад продолжить наш разговор. "
+            "Расскажите, что вас сейчас интересует или волнует? 😊"
+        )
+        return WAITING_MESSAGE
+    
+    # Handle need for guidance
+    if intent['needs_guidance']:
+        await update.message.reply_text(
+            "Отлично! Я помогу вам начать разговор. "
+            "Расскажите о том, что вас сейчас волнует - работа, отношения, "
+            "или что-то другое? Я задам вопросы, которые помогут лучше понять ситуацию. 🤗"
+        )
+        return WAITING_MESSAGE
     
     # Handle topic change
     if patterns['topic_change']:
