@@ -336,7 +336,13 @@ async def get_ai_response(prompt: str, max_tokens: int = 1000) -> str:
             temperature=0.7,
             timeout=60,
         )
-        return response.choices[0].message.content.strip()
+        result = response.choices[0].message.content.strip()
+        
+        # Проверяем, что ответ не обрезан
+        if result.endswith('...') or result.endswith('р'):
+            logger.warning(f"Response might be truncated: {result[-50:]}")
+        
+        return result
     except Exception as e:
         logger.error(f"OpenAI error: {e}")
         return "Извините, произошла ошибка при обработке запроса. Попробуйте позже."
@@ -565,8 +571,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return WAITING_MESSAGE
     
+    # Handle unclear words or typos
+    unclear_keywords = ['кончиной', 'кончину', 'кончине', 'кончина']
+    if any(keyword in text.lower() for keyword in unclear_keywords):
+        await update.message.reply_text(
+            "🤔 Кажется, вы имели в виду что-то другое? Возможно, опечатка? "
+            "Расскажите, пожалуйста, подробнее, что именно вас интересует. "
+            "Я готов помочь с любыми вопросами по психологии и карьере! 😊"
+        )
+        return WAITING_MESSAGE
+    
     # Handle references to previous conversation
-    reference_keywords = ['мы говорили', 'говорили об этом', 'смотри выше', 'выше', 'раньше говорил', 'раньше сказал', 'об этом', 'это то что']
+    reference_keywords = ['мы говорили', 'говорили об этом', 'смотри выше', 'выше', 'раньше говорил', 'раньше сказал', 'об этом', 'это то что', 'не понял', 'не поняла', 'не понимаешь', 'продолжи мысль', 'оборвалась', 'не понял?', 'не поняла?']
     is_referencing_previous = any(keyword in text.lower() for keyword in reference_keywords)
     
     if is_referencing_previous or patterns['provocative']:
@@ -574,7 +590,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         # Используем полный контекст для понимания ссылки
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, max_tokens=500)
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(text, response)
@@ -623,7 +639,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, max_tokens=500)
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(text, response)
@@ -705,6 +721,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Smart AI response based on conversation and patterns
     thinking_msg = await update.message.reply_text("🤔 Думаю...")
     
+    # Analyze user's emotional state for better empathy
+    sentiment_result = sentiment_analyzer.analyze_text(text)
+    
     # Generate intelligent response based on patterns with full context
     conversation_text = " ".join(conversation_history[user.id][-10:])  # Last 10 messages for better context
     
@@ -739,6 +758,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 ТЕКУЩЕЕ СООБЩЕНИЕ:
 {text}
 
+АНАЛИЗ НАСТРОЕНИЯ ПОЛЬЗОВАТЕЛЯ:
+- Общее настроение: {sentiment_result.overall_sentiment}
+- Уверенность в оценке: {sentiment_result.confidence:.2f}
+- Рекомендуемый стиль ответа: {sentiment_result.recommendation}
+- Уровень стресса: {sentiment_result.psychological_indicators.get('stress_level', 0):.2f}
+- Потребность в поддержке: {sentiment_result.psychological_indicators.get('need_support', 0):.2f}
+
 ВАЖНО: Если пользователь ссылается на предыдущие части разговора, обязательно учитывай контекст выше.
 
 АНАЛИЗ ПОЛЬЗОВАТЕЛЯ:
@@ -751,16 +777,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 3. КОНСУЛЬТАНТ - помощь с выбором профессии и развитием
 
 ПРИНЦИПЫ:
-- СНАЧАЛА прояви эмпатию и понимание
+- СНАЧАЛА прояви эмпатию и понимание с учетом настроения пользователя
 - ПОМНИ весь контекст разговора
-- Адаптируйся к потребностям пользователя
-- Поддерживай эмоционально
+- Адаптируйся к потребностям пользователя и его эмоциональному состоянию
+- Поддерживай эмоционально в соответствии с его состоянием
 - Мягко подводи к самоанализу
 - Если пользователь ссылается на предыдущее - обратись к контексту
+- Используй рекомендацию по стилю ответа из анализа настроения
 
-ФОРМАТ: Эмпатичный ответ (1-2 предложения) + релевантный вопрос.
+ФОРМАТ: Эмпатичный ответ с учетом настроения (1-2 предложения) + релевантный вопрос.
 
-СТИЛЬ: Теплый, профессиональный, адаптивный к ситуации, помнящий контекст.
+СТИЛЬ: Теплый, профессиональный, адаптивный к ситуации и настроению, помнящий контекст.
 """
     
     response = await get_ai_response(prompt, max_tokens=200)
