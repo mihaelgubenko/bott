@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Импорт данных - HR-Психоаналитик{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="fas fa-upload me-2"></i>
+        Импорт данных
+    </h1>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Загрузка файла</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Выберите файл для импорта</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".json,.csv" required>
+                        <div class="form-text">
+                            Поддерживаются файлы JSON и CSV (максимум 16 МБ)
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="merge_mode" name="merge_mode" checked>
+                            <label class="form-check-label" for="merge_mode">
+                                Режим слияния (заменить существующие данные)
+                            </label>
+                        </div>
+                        <div class="form-text">
+                            Если отключено, данные будут добавлены как новые записи
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-upload me-2"></i>
+                        Импортировать данные
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">Предупреждения</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Внимание!</strong> Импорт данных может заменить существующие записи.
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Рекомендация:</strong> Создайте резервную копию перед импортом.
+                </div>
+                
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <strong>Безопасность:</strong> Все файлы проверяются на корректность перед импортом.
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Форматы файлов</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h6><i class="fas fa-file-code text-primary me-2"></i>JSON формат</h6>
+                    <p class="text-muted small">
+                        Полная структура данных с метаинформацией. 
+                        Рекомендуется для полной синхронизации.
+                    </p>
+                </div>
+                
+                <div class="mb-3">
+                    <h6><i class="fas fa-file-csv text-info me-2"></i>CSV формат</h6>
+                    <p class="text-muted small">
+                        Табличный формат для анализа в Excel. 
+                        Подходит для просмотра и анализа данных.
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">Что будет импортировано</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Анализы пользователей
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Результаты A/B тестов
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Назначения вариантов
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-check text-success me-2"></i>
+                        Метаданные экспорта
+                    </li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0">Альтернативные способы</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('export_page') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-download me-2"></i>
+                        Сначала экспорт
+                    </a>
+                    <a href="{{ url_for('analyses') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-list me-2"></i>
+                        Просмотр данных
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('file').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const fileSize = file.size;
+        const maxSize = 16 * 1024 * 1024; // 16MB
+        
+        if (fileSize > maxSize) {
+            alert('Файл слишком большой. Максимальный размер: 16 МБ');
+            e.target.value = '';
+            return;
+        }
+        
+        const fileName = file.name;
+        const fileExt = fileName.split('.').pop().toLowerCase();
+        
+        if (!['json', 'csv'].includes(fileExt)) {
+            alert('Неподдерживаемый формат файла. Используйте JSON или CSV.');
+            e.target.value = '';
+            return;
+        }
+        
+        console.log('Файл выбран:', fileName, 'Размер:', (fileSize / 1024 / 1024).toFixed(2), 'МБ');
+    }
+});
+</script>
+{% endblock %}

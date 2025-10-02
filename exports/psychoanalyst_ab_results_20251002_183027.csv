@@ -1,0 +1,4 @@
+ID,User ID,Prompt Variant ID,Prompt Type,User Feedback,Response Quality,User Engagement,Conversion,Timestamp
+1,123456789,express_analysis_a,express_analysis,4.5,0.8,0.7,1,2025-10-02 18:30:27
+2,987654321,psychology_consultation_b,psychology_consultation,4.0,0.9,0.8,0,2025-10-02 18:30:27
+3,555666777,express_analysis_b,express_analysis,4.8,0.85,0.75,1,2025-10-02 18:30:27

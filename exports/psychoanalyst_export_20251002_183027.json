@@ -1,0 +1,102 @@
+{
+  "export_info": {
+    "timestamp": "20251002_183027",
+    "exported_at": "2025-10-02T18:30:27.075822",
+    "total_analyses": 3,
+    "total_ab_results": 3,
+    "version": "2.1"
+  },
+  "analyses": [
+    {
+      "id": 1,
+      "telegram_id": 123456789,
+      "name": "Анна",
+      "analysis_type": "express",
+      "analysis_data": {
+        "type": "express",
+        "analysis": "Тестовый экспресс-анализ"
+      },
+      "payment_status": "free",
+      "created_at": "2025-10-02 18:30:27"
+    },
+    {
+      "id": 2,
+      "telegram_id": 987654321,
+      "name": "Петр",
+      "analysis_type": "full",
+      "analysis_data": {
+        "type": "full",
+        "analysis": "Тестовый полный анализ"
+      },
+      "payment_status": "paid",
+      "created_at": "2025-10-02 18:30:27"
+    },
+    {
+      "id": 3,
+      "telegram_id": 555666777,
+      "name": "Мария",
+      "analysis_type": "express",
+      "analysis_data": {
+        "type": "express",
+        "analysis": "Еще один экспресс-анализ"
+      },
+      "payment_status": "free",
+      "created_at": "2025-10-02 18:30:27"
+    }
+  ],
+  "ab_test_results": [
+    {
+      "id": 1,
+      "user_id": 123456789,
+      "prompt_variant_id": "express_analysis_a",
+      "prompt_type": "express_analysis",
+      "user_feedback": 4.5,
+      "response_quality": 0.8,
+      "user_engagement": 0.7,
+      "conversion": true,
+      "timestamp": "2025-10-02 18:30:27"
+    },
+    {
+      "id": 2,
+      "user_id": 987654321,
+      "prompt_variant_id": "psychology_consultation_b",
+      "prompt_type": "psychology_consultation",
+      "user_feedback": 4.0,
+      "response_quality": 0.9,
+      "user_engagement": 0.8,
+      "conversion": false,
+      "timestamp": "2025-10-02 18:30:27"
+    },
+    {
+      "id": 3,
+      "user_id": 555666777,
+      "prompt_variant_id": "express_analysis_b",
+      "prompt_type": "express_analysis",
+      "user_feedback": 4.8,
+      "response_quality": 0.85,
+      "user_engagement": 0.75,
+      "conversion": true,
+      "timestamp": "2025-10-02 18:30:27"
+    }
+  ],
+  "variant_assignments": [
+    {
+      "user_id": 123456789,
+      "prompt_type": "express_analysis",
+      "variant_id": "express_analysis_a",
+      "assigned_at": "2025-10-02 18:30:27"
+    },
+    {
+      "user_id": 987654321,
+      "prompt_type": "psychology_consultation",
+      "variant_id": "psychology_consultation_b",
+      "assigned_at": "2025-10-02 18:30:27"
+    },
+    {
+      "user_id": 555666777,
+      "prompt_type": "express_analysis",
+      "variant_id": "express_analysis_b",
+      "assigned_at": "2025-10-02 18:30:27"
+    }
+  ]
+}
