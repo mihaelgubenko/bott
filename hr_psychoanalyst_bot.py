@@ -21,6 +21,10 @@ import openai
 # Новые модули для ИИ-улучшений
 from sentiment_analyzer import get_sentiment_analyzer
 from prompt_ab_testing import get_ab_testing_manager, PromptType
+from machine_learning_system import get_ml_system, UserProfile, UserStyle
+from feedback_system import get_feedback_system, FeedbackType
+from adaptive_prompts import get_adaptive_prompt_system, PromptType as AdaptivePromptType, UserContext
+from learning_analytics import get_learning_analytics
 
 # ENV
 load_dotenv()
@@ -49,6 +53,10 @@ conversation_history = {}
 # ИИ модули
 sentiment_analyzer = get_sentiment_analyzer()
 ab_testing_manager = get_ab_testing_manager()
+ml_system = get_ml_system()
+feedback_system = get_feedback_system()
+adaptive_prompt_system = get_adaptive_prompt_system()
+learning_analytics = get_learning_analytics()
 
 # Professional 7 questions for full analysis
 PROFESSIONAL_QUESTIONS = [
@@ -261,6 +269,7 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
     # Анализ настроения пользователя
     sentiment_result = sentiment_analyzer.analyze_text(user_message)
     
+    # Получаем базовый промпт через A/B тестирование
     template, variant_id = ab_testing_manager.get_prompt_for_user(user_id, PromptType.PSYCHOLOGY_CONSULTATION)
     
     if not template:
@@ -303,6 +312,45 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
         conversation_context = "Предыдущие сообщения:\n" + "\n".join([f"- {msg}" for msg in recent_messages])
     else:
         conversation_context = "Это первое сообщение в разговоре."
+    
+    # Получаем профиль пользователя для адаптации
+    user_profile = ml_system.get_user_profile(user_id)
+    
+    # Создаем контекст пользователя для адаптивных промптов
+    if user_profile:
+        user_context = UserContext(
+            user_id=user_id,
+            preferred_style=UserStyle(user_profile.preferred_style),
+            psychological_traits=user_profile.psychological_traits,
+            communication_patterns=user_profile.communication_patterns,
+            interests=user_profile.interests,
+            session_context={
+                'session_length': len(conversation_history) if conversation_history else 0,
+                'request_type': 'psychology_consultation'
+            },
+            conversation_history=conversation_history or []
+        )
+        
+        # Генерируем адаптивный промпт
+        adaptive_prompt = adaptive_prompt_system.generate_adaptive_prompt(
+            user_context=user_context,
+            prompt_type=AdaptivePromptType.PSYCHOLOGY_CONSULTATION,
+            additional_context={
+                'sentiment': sentiment_result.overall_sentiment,
+                'interests': user_profile.interests
+            }
+        )
+        
+        # Используем адаптивный промпт
+        template = adaptive_prompt.final_prompt
+        
+        # Записываем использование адаптивного промпта
+        adaptive_prompt_system.record_prompt_usage(
+            user_id=user_id,
+            prompt_type=AdaptivePromptType.PSYCHOLOGY_CONSULTATION,
+            user_style=user_context.preferred_style,
+            adaptations_count=len(adaptive_prompt.adaptations)
+        )
     
     # Форматируем промпт с учетом анализа настроения
     sentiment_info = f"""Настроение: {sentiment_result.overall_sentiment} (уверенность: {sentiment_result.confidence:.2f})
@@ -392,6 +440,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /cancel - отменить текущий процесс
 /reset - сбросить бота
 /stats - статистика (только админ)
+/dashboard - дашборд самообучения (только админ)
+/feedback - статистика обратной связи (только админ)
+/insights - инсайты для улучшения (только админ)
 
 **🤖 ИИ-возможности:**
 • Анализ эмоций и настроения в реальном времени
@@ -500,6 +551,126 @@ async def show_ab_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         logger.error(f"Error showing AB stats: {e}")
         await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
 
+async def show_learning_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать дашборд обучения ИИ (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        # Получаем данные дашборда
+        dashboard_data = learning_analytics.get_learning_dashboard_data()
+        
+        # Формируем сообщение
+        message = "🧠 **Дашборд самообучения ИИ:**\n\n"
+        
+        # Текущие метрики
+        metrics = dashboard_data['current_metrics']
+        message += "📈 **Текущие метрики:**\n"
+        message += f"• Удовлетворенность: {metrics['user_satisfaction']:.2f}/1.0\n"
+        message += f"• Качество ответов: {metrics['response_quality']:.2f}/1.0\n"
+        message += f"• Вовлеченность: {metrics['engagement_score']:.2f}/1.0\n"
+        message += f"• Конверсия: {metrics['conversion_rate']:.1%}\n"
+        message += f"• Активные пользователи: {metrics['active_users']}\n\n"
+        
+        # Тренды
+        message += "📊 **Тренды (7 дней):**\n"
+        for trend in dashboard_data['trends']:
+            direction_emoji = "📈" if trend['trend_direction'] == 'up' else "📉" if trend['trend_direction'] == 'down' else "➡️"
+            message += f"• {trend['metric_name']}: {direction_emoji} (сила: {trend['trend_strength']:.2f})\n"
+        
+        # Инсайты
+        insights = dashboard_data['insights_summary']
+        message += f"\n💡 **Активные инсайты:**\n"
+        message += f"• Ожидают: {insights['pending_insights']}\n"
+        message += f"• В реализации: {insights['implementing_insights']}\n"
+        
+        # Общий индекс здоровья
+        health_score = dashboard_data['overall_health_score']
+        health_emoji = "🟢" if health_score > 0.7 else "🟡" if health_score > 0.5 else "🔴"
+        message += f"\n{health_emoji} **Индекс здоровья системы:** {health_score:.2f}/1.0\n"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Error showing learning dashboard: {e}")
+        await update.message.reply_text(f"❌ Ошибка при получении дашборда: {e}")
+
+async def show_feedback_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать статистику обратной связи (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        # Получаем статистику обратной связи
+        feedback_stats = feedback_system.get_feedback_statistics(days=7)
+        
+        # Формируем сообщение
+        message = "📝 **Статистика обратной связи (7 дней):**\n\n"
+        message += f"• Всего отзывов: {feedback_stats['total_feedback']}\n"
+        
+        if feedback_stats['average_rating']:
+            message += f"• Средняя оценка: {feedback_stats['average_rating']:.1f}/5.0\n"
+        
+        message += f"• 👍 Лайков: {feedback_stats['thumbs_up']}\n"
+        message += f"• 👎 Дизлайков: {feedback_stats['thumbs_down']}\n"
+        message += f"• Активных инсайтов: {feedback_stats['pending_insights']}\n\n"
+        
+        # Статистика по типам
+        message += "📊 **По типам обратной связи:**\n"
+        for feedback_type, count in feedback_stats['feedback_by_type'].items():
+            message += f"• {feedback_type}: {count}\n"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Error showing feedback stats: {e}")
+        await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
+
+async def show_ml_insights(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать инсайты машинного обучения (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        # Получаем инсайты
+        insights = learning_analytics.generate_learning_insights()
+        
+        if not insights:
+            await update.message.reply_text("💡 Пока нет новых инсайтов для улучшения")
+            return
+        
+        message = "💡 **Инсайты для улучшения ИИ:**\n\n"
+        
+        for i, insight in enumerate(insights[:5], 1):  # Показываем топ-5
+            message += f"**{i}. {insight.title}**\n"
+            message += f"• Описание: {insight.description}\n"
+            message += f"• Воздействие: {insight.impact_score:.2f}/1.0\n"
+            message += f"• Уверенность: {insight.confidence:.2f}/1.0\n"
+            message += f"• Ожидаемое улучшение: {insight.expected_improvement:.1f}%\n"
+            message += f"• Рекомендации: {', '.join(insight.actionable_items[:2])}\n\n"
+        
+        # Сохраняем инсайты
+        for insight in insights:
+            learning_analytics.save_learning_insight(insight)
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Error showing ML insights: {e}")
+        await update.message.reply_text(f"❌ Ошибка при получении инсайтов: {e}")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     text = update.message.text.strip()
@@ -517,6 +688,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Analyze speech patterns
     patterns = analyze_speech_patterns(text)
     
+    # Создаем уникальный ID сессии
+    session_id = f"session_{user.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
     # Store conversation
     if user.id not in conversation_history:
         conversation_history[user.id] = []
@@ -526,6 +700,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Keep only last 15 messages
     if len(conversation_history[user.id]) > 15:
         conversation_history[user.id] = conversation_history[user.id][-15:]
+    
+    # Анализ пользователя через систему машинного обучения
+    user_analysis = ml_system.analyze_user_message(
+        user_id=user.id,
+        message=text,
+        context=conversation_history[user.id][:-1]  # Без текущего сообщения
+    )
+    
+    # Сбор неявной обратной связи
+    feedback_system.collect_implicit_feedback(
+        user_id=user.id,
+        session_id=session_id,
+        user_message=text,
+        ai_response="",  # Будет заполнено после генерации ответа
+        session_metrics={
+            'response_time': 0,  # Будет заполнено
+            'previous_messages': conversation_history[user.id][:-1],
+            'session_length': len(conversation_history[user.id])
+        }
+    )
     
     # Handle cancellation
     if patterns['cancellation']:
@@ -632,6 +826,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             prompt_variant_id=variant_id,
             prompt_type=PromptType.PSYCHOLOGY_CONSULTATION,
             response_quality=quality_score
+        )
+        
+        # Записываем метрики обучения
+        from machine_learning_system import LearningMetrics
+        learning_metrics = LearningMetrics(
+            user_satisfaction=0.7,  # Будет обновлено через обратную связь
+            response_relevance=quality_score,
+            engagement_score=min(len(text.split()) / 50.0, 1.0),
+            conversion_rate=0.0,  # Будет обновлено при конверсии
+            session_duration=0,  # Будет обновлено
+            message_count=len(conversation_history[user.id]),
+            timestamp=datetime.now()
+        )
+        
+        ml_system.record_interaction(
+            user_id=user.id,
+            session_id=session_id,
+            user_message=text,
+            ai_response=response,
+            metrics=learning_metrics
         )
         
         await thinking_msg.delete()
@@ -871,6 +1085,9 @@ def main():
     application.add_handler(CommandHandler('clear', clear_memory))
     application.add_handler(CommandHandler('reset', reset_bot))
     application.add_handler(CommandHandler('stats', show_ab_stats))
+    application.add_handler(CommandHandler('dashboard', show_learning_dashboard))
+    application.add_handler(CommandHandler('feedback', show_feedback_stats))
+    application.add_handler(CommandHandler('insights', show_ml_insights))
     
     logger.info("HR-Психоаналитик запущен")
     application.run_polling()
