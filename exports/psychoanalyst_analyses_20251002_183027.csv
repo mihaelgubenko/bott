@@ -1,0 +1,4 @@
+ID,Telegram ID,Name,Analysis Type,Analysis Data,Payment Status,Created At
+1,123456789,Анна,express,"{""type"": ""express"", ""analysis"": ""Тестовый экспресс-анализ""}",free,2025-10-02 18:30:27
+2,987654321,Петр,full,"{""type"": ""full"", ""analysis"": ""Тестовый полный анализ""}",paid,2025-10-02 18:30:27
+3,555666777,Мария,express,"{""type"": ""express"", ""analysis"": ""Еще один экспресс-анализ""}",free,2025-10-02 18:30:27

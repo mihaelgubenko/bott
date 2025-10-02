@@ -21,6 +21,7 @@ import openai
 # Новые модули для ИИ-улучшений
 from sentiment_analyzer import get_sentiment_analyzer
 from prompt_ab_testing import get_ab_testing_manager, PromptType
+from data_sync import get_sync_manager
 
 # ENV
 load_dotenv()
@@ -49,6 +50,7 @@ conversation_history = {}
 # ИИ модули
 sentiment_analyzer = get_sentiment_analyzer()
 ab_testing_manager = get_ab_testing_manager()
+sync_manager = get_sync_manager()
 
 # Professional 7 questions for full analysis
 PROFESSIONAL_QUESTIONS = [
@@ -392,6 +394,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /cancel - отменить текущий процесс
 /reset - сбросить бота
 /stats - статистика (только админ)
+/export - экспорт данных (только админ)
+/import - импорт данных (только админ)
+/sync - информация о синхронизации (только админ)
 
 **🤖 ИИ-возможности:**
 • Анализ эмоций и настроения в реальном времени
@@ -499,6 +504,133 @@ async def show_ab_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except Exception as e:
         logger.error(f"Error showing AB stats: {e}")
         await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
+
+async def export_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Экспорт данных чатов (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        # Определяем формат экспорта
+        format_type = 'json'
+        if context.args and context.args[0].lower() in ['csv', 'json']:
+            format_type = context.args[0].lower()
+        
+        await update.message.reply_text("📤 Экспортирую данные...")
+        
+        # Экспортируем данные
+        filepath = sync_manager.export_all_data(format_type)
+        
+        # Отправляем файл пользователю
+        with open(filepath, 'rb') as f:
+            await update.message.reply_document(
+                document=f,
+                filename=os.path.basename(filepath),
+                caption=f"✅ Данные экспортированы в формате {format_type.upper()}\n\n"
+                       f"📁 Файл: {os.path.basename(filepath)}\n"
+                       f"📊 Содержит все анализы и результаты A/B тестов\n\n"
+                       f"💡 Для импорта на другом устройстве используйте команду /import"
+            )
+        
+        logger.info(f"Данные экспортированы: {filepath}")
+        
+    except Exception as e:
+        logger.error(f"Error exporting data: {e}")
+        await update.message.reply_text(f"❌ Ошибка при экспорте: {e}")
+
+async def import_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Импорт данных чатов (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    if not update.message.document:
+        await update.message.reply_text(
+            "📥 **Импорт данных**\n\n"
+            "Отправьте файл экспорта (JSON или CSV) для импорта данных.\n\n"
+            "⚠️ **Внимание:** Импорт заменит существующие данные!"
+        )
+        return
+    
+    try:
+        # Скачиваем файл
+        file = await context.bot.get_file(update.message.document.file_id)
+        filepath = f"import_{update.message.document.file_name}"
+        
+        await file.download_to_drive(filepath)
+        
+        await update.message.reply_text("📥 Импортирую данные...")
+        
+        # Импортируем данные
+        result = sync_manager.import_data(filepath, merge_mode=True)
+        
+        await update.message.reply_text(
+            f"✅ **Импорт завершен!**\n\n"
+            f"📊 Импортировано:\n"
+            f"• Анализов: {result['analyses']}\n"
+            f"• A/B результатов: {result['ab_results']}\n"
+            f"• Назначений вариантов: {result['assignments']}\n\n"
+            f"💡 Данные успешно синхронизированы!"
+        )
+        
+        # Удаляем временный файл
+        os.remove(filepath)
+        
+        logger.info(f"Данные импортированы: {result}")
+        
+    except Exception as e:
+        logger.error(f"Error importing data: {e}")
+        await update.message.reply_text(f"❌ Ошибка при импорте: {e}")
+        # Удаляем временный файл в случае ошибки
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+async def sync_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Информация о синхронизации данных"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        info = sync_manager.get_export_info()
+        
+        message = "🔄 **Информация о синхронизации**\n\n"
+        message += f"📁 Папка экспорта: `{info['export_dir']}`\n"
+        message += f"📊 Доступно экспортов: {info['total_exports']}\n\n"
+        
+        if info['available_exports']:
+            message += "📋 **Последние экспорты:**\n"
+            for export in info['available_exports'][:5]:  # Показываем последние 5
+                message += f"• `{export['filename']}`\n"
+                message += f"  📅 {export['exported_at']}\n"
+                message += f"  📊 {export['total_analyses']} анализов\n"
+                message += f"  💾 {export['file_size']} байт\n\n"
+        else:
+            message += "📭 Экспортов пока нет\n\n"
+        
+        message += "💡 **Как синхронизировать:**\n"
+        message += "1. `/export` - экспорт данных в JSON\n"
+        message += "2. Скачать файл на компьютер\n"
+        message += "3. `/import` - импорт на другом устройстве\n\n"
+        message += "🔄 **Автоматическая синхронизация:**\n"
+        message += "• Через облачные сервисы (в разработке)\n"
+        message += "• Через веб-интерфейс (в разработке)"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Error getting sync info: {e}")
+        await update.message.reply_text(f"❌ Ошибка при получении информации: {e}")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -871,6 +1003,9 @@ def main():
     application.add_handler(CommandHandler('clear', clear_memory))
     application.add_handler(CommandHandler('reset', reset_bot))
     application.add_handler(CommandHandler('stats', show_ab_stats))
+    application.add_handler(CommandHandler('export', export_data))
+    application.add_handler(CommandHandler('import', import_data))
+    application.add_handler(CommandHandler('sync', sync_info))
     
     logger.info("HR-Психоаналитик запущен")
     application.run_polling()
