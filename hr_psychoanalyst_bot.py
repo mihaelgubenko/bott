@@ -21,6 +21,7 @@ import openai
 # Новые модули для ИИ-улучшений
 from sentiment_analyzer import get_sentiment_analyzer
 from prompt_ab_testing import get_ab_testing_manager, PromptType
+from security_protection import get_security_protection
 
 # ENV
 load_dotenv()
@@ -49,6 +50,7 @@ conversation_history = {}
 # ИИ модули
 sentiment_analyzer = get_sentiment_analyzer()
 ab_testing_manager = get_ab_testing_manager()
+security_protection = get_security_protection()
 
 # Professional 7 questions for full analysis
 PROFESSIONAL_QUESTIONS = [
@@ -392,11 +394,20 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 /cancel - отменить текущий процесс
 /reset - сбросить бота
 /stats - статистика (только админ)
+/security - статистика безопасности (только админ)
+/unblock <id> - разблокировать пользователя (только админ)
+/threats <id> - проверить угрозы пользователя (только админ)
 
 **🤖 ИИ-возможности:**
 • Анализ эмоций и настроения в реальном времени
 • A/B тестирование промптов для лучших ответов
 • Персонализация на основе стиля общения
+
+**🛡️ Безопасность:**
+• Защита от хакерских промтов и атак
+• Автоматическая фильтрация вредоносного контента
+• Ограничение скорости запросов
+• Мониторинг подозрительной активности
 
 **Все конфиденциально и анонимно!** 💙
 """
@@ -500,6 +511,100 @@ async def show_ab_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         logger.error(f"Error showing AB stats: {e}")
         await update.message.reply_text(f"❌ Ошибка при получении статистики: {e}")
 
+async def show_security_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показать статистику безопасности (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        stats = security_protection.get_security_stats()
+        
+        message = "🛡️ **Статистика безопасности:**\n\n"
+        message += f"• Всего угроз: {stats['total_threats']}\n"
+        message += f"• Заблокированных пользователей: {stats['blocked_users']}\n"
+        message += f"• Активных подозрительных: {stats['active_users']}\n\n"
+        
+        if stats['threat_types']:
+            message += "**Типы угроз:**\n"
+            for threat_type, count in stats['threat_types'].items():
+                message += f"• {threat_type}: {count}\n"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Error showing security stats: {e}")
+        await update.message.reply_text(f"❌ Ошибка при получении статистики безопасности: {e}")
+
+async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Разблокировать пользователя (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        # Получаем ID пользователя из аргументов команды
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID пользователя: /unblock <user_id>")
+            return
+        
+        user_id_to_unblock = int(context.args[0])
+        security_protection.unblock_user(user_id_to_unblock)
+        
+        await update.message.reply_text(f"✅ Пользователь {user_id_to_unblock} разблокирован")
+        
+    except ValueError:
+        await update.message.reply_text("❌ Неверный формат ID пользователя")
+    except Exception as e:
+        logger.error(f"Error unblocking user: {e}")
+        await update.message.reply_text(f"❌ Ошибка при разблокировке: {e}")
+
+async def check_user_threats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Проверить угрозы пользователя (только для админов)"""
+    user = update.effective_user
+    
+    # Проверка на админа
+    if user.id != 123456789:  # Замените на ваш Telegram ID
+        await update.message.reply_text("❌ У вас нет прав для этой команды")
+        return
+    
+    try:
+        # Получаем ID пользователя из аргументов команды
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ID пользователя: /threats <user_id>")
+            return
+        
+        user_id_to_check = int(context.args[0])
+        threats = security_protection.get_user_threat_history(user_id_to_check)
+        
+        if not threats:
+            await update.message.reply_text(f"✅ У пользователя {user_id_to_check} нет угроз")
+            return
+        
+        message = f"🚨 **Угрозы пользователя {user_id_to_check}:**\n\n"
+        
+        for i, threat in enumerate(threats[-10:], 1):  # Последние 10 угроз
+            message += f"{i}. **{threat.threat_type}** ({threat.severity})\n"
+            message += f"   {threat.description}\n"
+            message += f"   Время: {threat.timestamp.strftime('%d.%m.%Y %H:%M')}\n\n"
+        
+        if len(threats) > 10:
+            message += f"... и еще {len(threats) - 10} угроз"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        
+    except ValueError:
+        await update.message.reply_text("❌ Неверный формат ID пользователя")
+    except Exception as e:
+        logger.error(f"Error checking user threats: {e}")
+        await update.message.reply_text(f"❌ Ошибка при проверке угроз: {e}")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     text = update.message.text.strip()
@@ -507,6 +612,56 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not text:
         await update.message.reply_text("Пожалуйста, напишите что-то конкретное.")
         return WAITING_MESSAGE
+    
+    # Проверка безопасности
+    if security_protection.is_user_blocked(user.id):
+        await update.message.reply_text(
+            "❌ Ваш аккаунт заблокирован из-за нарушений правил безопасности. "
+            "Обратитесь к администратору для разблокировки."
+        )
+        return ConversationHandler.END
+    
+    # Анализ сообщения на угрозы безопасности
+    security_result = security_protection.analyze_message(text, user.id)
+    
+    if security_result.should_block:
+        await update.message.reply_text(
+            "❌ Обнаружена подозрительная активность. "
+            "Ваш аккаунт заблокирован для обеспечения безопасности."
+        )
+        return ConversationHandler.END
+    
+    if not security_result.is_safe:
+        # Используем очищенный текст
+        text = security_result.sanitized_text
+        
+        # Логирование угроз
+        for threat in security_result.threats:
+            logger.warning(
+                f"SECURITY THREAT DETECTED: User {user.id} | "
+                f"Type: {threat.threat_type} | "
+                f"Severity: {threat.severity} | "
+                f"Pattern: {threat.detected_pattern} | "
+                f"Original text: {update.message.text[:100]}..."
+            )
+        
+        # Предупреждение пользователю
+        threat_count = len(security_result.threats)
+        await update.message.reply_text(
+            f"⚠️ Обнаружены подозрительные элементы в вашем сообщении ({threat_count} угроз). "
+            "Пожалуйста, соблюдайте правила общения с ботом."
+        )
+        
+        # Если риск слишком высокий, блокируем
+        if security_result.risk_score > 0.7:
+            logger.critical(
+                f"USER BLOCKED: User {user.id} blocked due to high security risk "
+                f"({security_result.risk_score:.2f})"
+            )
+            await update.message.reply_text(
+                "❌ Слишком высокий риск безопасности. Ваш аккаунт заблокирован."
+            )
+            return ConversationHandler.END
     
     # Detect language
     language = detect_language(text)
@@ -871,6 +1026,9 @@ def main():
     application.add_handler(CommandHandler('clear', clear_memory))
     application.add_handler(CommandHandler('reset', reset_bot))
     application.add_handler(CommandHandler('stats', show_ab_stats))
+    application.add_handler(CommandHandler('security', show_security_stats))
+    application.add_handler(CommandHandler('unblock', unblock_user))
+    application.add_handler(CommandHandler('threats', check_user_threats))
     
     logger.info("HR-Психоаналитик запущен")
     application.run_polling()
