@@ -125,22 +125,56 @@ def analyze_speech_patterns(text: str) -> dict:
         'provocative': False,
         'topic_change': False,
         'self_introduction_request': False,
-        'dream_expression': False
+        'dream_expression': False,
+        'scenario': 'general'  # 'psychology', 'career', 'general'
     }
     
-    # Психологическая помощь
-    psychology_keywords = ['сон', 'сны', 'депрессия', 'тревога', 'стресс', 'паника', 'страх', 'грусть', 'одиночество', 'отношения', 'семья', 'родители', 'дети', 'любовь', 'развод', 'смерть', 'потеря', 'плохо', 'больно', 'страшно']
-    if any(keyword in text_lower for keyword in psychology_keywords):
-        patterns['psychology_need'] = True
+    # Психологическая помощь - расширенный список
+    psychology_keywords = [
+        'сон', 'сны', 'депрессия', 'тревога', 'стресс', 'паника', 'страх', 'грусть', 
+        'одиночество', 'отношения', 'семья', 'родители', 'дети', 'любовь', 'развод', 
+        'смерть', 'потеря', 'плохо', 'больно', 'страшно', 'психолог', 'психология',
+        'психика', 'эмоции', 'чувства', 'переживания', 'травма', 'фобия', 'паническая атака',
+        'навязчивые мысли', 'бессонница', 'апатия', 'безразличие', 'суицид', 'самоубийство',
+        'психологическая помощь', 'психологическая поддержка', 'психотерапия', 'психоанализ',
+        'медитация', 'релаксация', 'тревожность', 'нервозность', 'истерика', 'паника',
+        'кошмары', 'проблемы со сном', 'не хочется', 'ничего не хочется'
+    ]
     
-    # Карьерные вопросы
-    career_keywords = ['работа', 'карьера', 'профессия', 'зарплата', 'деньги', 'учеба', 'образование', 'навыки', 'опыт', 'компания', 'начальник', 'коллеги']
-    if any(keyword in text_lower for keyword in career_keywords):
-        patterns['career_need'] = True
+    # Карьерные вопросы - расширенный список
+    career_keywords = [
+        'работа', 'карьера', 'профессия', 'зарплата', 'деньги', 'учеба', 'образование', 
+        'навыки', 'опыт', 'компания', 'начальник', 'коллеги', 'hr', 'рекрутер', 'вакансия',
+        'резюме', 'собеседование', 'интервью', 'трудоустройство', 'карьерный рост', 'продвижение',
+        'курсы', 'обучение', 'сертификация', 'диплом', 'университет', 'институт', 'колледж',
+        'специальность', 'квалификация', 'компетенции', 'профессиональные навыки', 'soft skills',
+        'hard skills', 'менеджмент', 'лидерство', 'команда', 'проект', 'бизнес', 'стартап',
+        'предпринимательство', 'фриланс', 'удаленная работа', 'офис', 'рабочее место',
+        'найти работу', 'сменить карьеру', 'какую профессию', 'профессию выбрать'
+    ]
     
     # Эмоциональная поддержка
-    emotional_keywords = ['одинок', 'грустно', 'плохо', 'устал', 'устала', 'сложно', 'трудно', 'помоги', 'поддержка', 'понимаю', 'понимаешь']
-    if any(keyword in text_lower for keyword in emotional_keywords):
+    emotional_keywords = [
+        'одинок', 'грустно', 'плохо', 'устал', 'устала', 'сложно', 'трудно', 'помоги', 
+        'поддержка', 'понимаю', 'понимаешь', 'не справляюсь', 'не могу', 'не получается',
+        'все плохо', 'все ужасно', 'не знаю что делать', 'запутался', 'запуталась'
+    ]
+    
+    # Подсчет ключевых слов для определения приоритета
+    psychology_score = sum(1 for keyword in psychology_keywords if keyword in text_lower)
+    career_score = sum(1 for keyword in career_keywords if keyword in text_lower)
+    emotional_score = sum(1 for keyword in emotional_keywords if keyword in text_lower)
+    
+    # Определение основного сценария
+    if psychology_score > 0 or emotional_score > 0:
+        patterns['psychology_need'] = True
+        patterns['scenario'] = 'psychology'
+    elif career_score > 0:
+        patterns['career_need'] = True
+        patterns['scenario'] = 'career'
+    
+    # Эмоциональная поддержка (может быть в любом сценарии)
+    if emotional_score > 0:
         patterns['emotional_support'] = True
     
     # Отмена/прекращение
@@ -172,18 +206,18 @@ def analyze_speech_patterns(text: str) -> dict:
 
 # Professional prompts with A/B testing
 def get_express_analysis_prompt(conversation: str, message_count: int, user_id: int) -> Tuple[str, str]:
-    """Получить промпт для экспресс-анализа с учетом A/B тестирования"""
+    """Получить промпт для экспресс-анализа с учетом A/B тестирования (только для HR-сценария)"""
     template, variant_id = ab_testing_manager.get_prompt_for_user(user_id, PromptType.EXPRESS_ANALYSIS)
     
     if not template:
-        # Fallback к стандартному промпту
+        # Fallback к стандартному промпту для HR-консультирования
         template = """
-Ты — профессиональный HR-психоаналитик и карьерный консультант. 
+Ты — профессиональный HR-консультант и карьерный аналитик. 
 
 ДИАЛОГ КЛИЕНТА ({message_count} сообщений):
 {conversation}
 
-ЗАДАЧА: Проведи экспресс-анализ личности на основе диалога.
+ЗАДАЧА: Проведи экспресс-анализ личности для карьерного консультирования.
 
 МЕТОДОЛОГИЯ:
 - Психоанализ (Фрейд): защитные механизмы, бессознательные мотивы
@@ -264,9 +298,9 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
     template, variant_id = ab_testing_manager.get_prompt_for_user(user_id, PromptType.PSYCHOLOGY_CONSULTATION)
     
     if not template:
-        # Fallback к стандартному промпту с контекстом
+        # Fallback к стандартному промпту с контекстом для психологической консультации
         template = """
-Ты — опытный психолог с большим сердцем. Твоя главная задача - ПОДДЕРЖАТЬ и ПОНИМАТЬ.
+Ты — опытный психолог-консультант с большим сердцем. Твоя главная задача - ПОДДЕРЖАТЬ и ПОНИМАТЬ.
 
 ИСТОРИЯ РАЗГОВОРА:
 {conversation_context}
@@ -276,7 +310,7 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
 
 ВАЖНО: Если клиент ссылается на предыдущие части разговора ("мы говорили об этом", "выше", "раньше"), обязательно учитывай контекст из истории разговора.
 
-ТВОЯ РОЛЬ: Друг-психолог, который всегда на стороне человека и ПОМНИТ весь разговор.
+ТВОЯ РОЛЬ: Профессиональный психолог, который всегда на стороне человека и ПОМНИТ весь разговор.
 
 ПРИНЦИПЫ:
 - СНАЧАЛА прояви эмпатию и понимание
@@ -285,6 +319,7 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
 - Поддерживай эмоционально
 - Будь теплым и человечным
 - Если человек говорит "не понял" или ссылается на предыдущее - обратись к контексту
+- Фокусируйся на психологических аспектах, а не на карьерных
 
 ФОРМАТ ОТВЕТА:
 💙 Эмпатичный ответ (понимание чувств с учетом контекста)
@@ -352,17 +387,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     welcome_text = """
 🤗 **HR-Психоаналитик | Карьерный консультант**
 
-Привет! Я ваш персональный помощник, специализирующийся на:
+Привет! Я ваш персональный помощник, который автоматически определяет, в чем вы нуждаетесь:
 
-💙 **Психологической поддержке** - выслушаю и поддержу
-🧠 **Анализе личности** - помогу понять себя и свои чувства  
-🤝 **Психологической консультации** - сны, стресс, отношения
-💼 **Карьерном консультировании** - выбор профессии и развития
+💙 **Психологическая поддержка** - если вы говорите о снах, стрессе, отношениях, эмоциях
+🧠 **Карьерное консультирование** - если вы говорите о работе, профессии, обучении
 
 **Как я работаю:**
 • Просто общайтесь со мной естественно
-• После 10 сообщений проведу экспресс-анализ (бесплатно)
-• Для детального психоанализа скажите 'полный анализ'
+• Я автоматически определю ваш запрос
+• Для карьеры: после 10 сообщений проведу экспресс-анализ (бесплатно)
+• Для психологии: предоставлю психологическую консультацию
+• Для детального анализа скажите 'полный анализ'
 • Использую ИИ для анализа эмоций и настроения
 • Постоянно улучшаюсь через A/B тестирование
 
@@ -376,9 +411,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     help_text = """
 💙 **Я здесь, чтобы помочь:**
 
+**Автоматическое определение запроса:**
+• Психологическая поддержка - сны, стресс, отношения, эмоции
+• Карьерное консультирование - работа, профессия, обучение
+
 **Бесплатно:**
 • Психологическая поддержка и консультация
-• Экспресс-анализ личности (после 10 сообщений)
+• Экспресс-анализ личности (только для карьеры, после 10 сообщений)
 • Помощь с выбором профессии
 
 **Платно (500₽):**
@@ -397,6 +436,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 • Анализ эмоций и настроения в реальном времени
 • A/B тестирование промптов для лучших ответов
 • Персонализация на основе стиля общения
+• Автоматическое определение сценария
 
 **Все конфиденциально и анонимно!** 💙
 """
@@ -619,7 +659,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return Q1
     
     # Handle psychology-related questions
-    if patterns['psychology_need'] or patterns['emotional_support']:
+    if patterns['psychology_need'] or patterns['emotional_support'] or patterns['scenario'] == 'psychology':
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
@@ -638,14 +678,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
         return WAITING_MESSAGE
     
-    # Check message count for express analysis
+    # Check message count for express analysis (только для HR-сценария)
     message_count = len(conversation_history[user.id])
     
-    if message_count >= 10:
-        # Trigger express analysis
+    if message_count >= 10 and patterns['scenario'] == 'career':
+        # Trigger express analysis только для карьерного консультирования
         thinking_msg = await update.message.reply_text(
             "🎯 Отлично! У меня достаточно информации для экспресс-анализа. "
-            "Провожу анализ вашей личности..."
+            "Провожу анализ вашей личности для карьерного консультирования..."
         )
         
         conversation_text = " ".join(conversation_history[user.id])
@@ -681,22 +721,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             'type': 'express',
             'conversation': conversation_text,
             'analysis': response,
-            'message_count': message_count
+            'message_count': message_count,
+            'scenario': 'career'
         }
         save_analysis(user.id, user.first_name or f"User_{user.id}", 'express', analysis_data)
         
         return WAITING_MESSAGE
     
-    # Continue conversation with smart questions
+    # Continue conversation with smart questions (адаптивные к сценарию)
     if message_count in [3, 6, 8]:
-        # Ask professional questions to guide conversation
-        questions = [
-            "Расскажите о ваших главных целях в жизни. Что для вас важно?",
-            "Как вы обычно принимаете важные решения? Что влияет на ваш выбор?",
-            "Опишите идеальную рабочую среду. Где вы чувствуете себя лучше всего?",
-            "Что вас больше всего мотивирует? Откуда черпаете энергию?",
-            "Какие ваши сильные стороны? В чем вы особенно хороши?"
-        ]
+        # Ask professional questions to guide conversation based on scenario
+        if patterns['scenario'] == 'psychology':
+            questions = [
+                "Расскажите, что вас больше всего беспокоит в последнее время?",
+                "Как вы обычно справляетесь со сложными эмоциями?",
+                "Что помогает вам чувствовать себя лучше?",
+                "Опишите ваши отношения с близкими людьми.",
+                "Какие у вас есть способы расслабиться и снять стресс?"
+            ]
+        elif patterns['scenario'] == 'career':
+            questions = [
+                "Расскажите о ваших главных целях в жизни. Что для вас важно?",
+                "Как вы обычно принимаете важные решения? Что влияет на ваш выбор?",
+                "Опишите идеальную рабочую среду. Где вы чувствуете себя лучше всего?",
+                "Что вас больше всего мотивирует? Откуда черпаете энергию?",
+                "Какие ваши сильные стороны? В чем вы особенно хороши?"
+            ]
+        else:
+            # Общие вопросы для неопределенного сценария
+            questions = [
+                "Расскажите о ваших главных целях в жизни. Что для вас важно?",
+                "Как вы обычно принимаете важные решения? Что влияет на ваш выбор?",
+                "Опишите идеальную рабочую среду. Где вы чувствуете себя лучше всего?",
+                "Что вас больше всего мотивирует? Откуда черпаете энергию?",
+                "Какие ваши сильные стороны? В чем вы особенно хороши?"
+            ]
         
         question = questions[min(message_count // 2, len(questions) - 1)]
         await update.message.reply_text(f"💭 {question}")
@@ -708,8 +767,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Generate intelligent response based on patterns with full context
     conversation_text = " ".join(conversation_history[user.id][-10:])  # Last 10 messages for better context
     
-    # Determine primary role based on patterns
-    if patterns['dream_expression']:
+    # Determine primary role based on patterns and scenario
+    if patterns['scenario'] == 'psychology':
+        primary_role = "ПСИХОЛОГ-КОНСУЛЬТАНТ"
+        focus = "эмоциональная поддержка и психологическая помощь"
+    elif patterns['scenario'] == 'career':
+        primary_role = "HR-СПЕЦИАЛИСТ"
+        focus = "карьерные рекомендации и профессиональное развитие"
+    elif patterns['dream_expression']:
         primary_role = "ВДОХНОВЛЯЮЩИЙ КОНСУЛЬТАНТ"
         focus = "поддержка мечтаний и мотивация к достижению целей"
     elif patterns['career_need'] and not patterns['psychology_need']:
@@ -731,7 +796,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         previous_context = "Предыдущие сообщения в разговоре:\n" + "\n".join([f"- {msg}" for msg in recent_messages])
     
     prompt = f"""
-Ты — HR-психоаналитик и карьерный консультант. 
+Ты — {primary_role}. 
 
 КОНТЕКСТ РАЗГОВОРА:
 {previous_context}
@@ -744,10 +809,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 АНАЛИЗ ПОЛЬЗОВАТЕЛЯ:
 - Основная потребность: {focus}
 - Роль: {primary_role}
+- Сценарий: {patterns['scenario']}
 
 ТВОИ РОЛИ (адаптивные):
-1. ПСИХОЛОГ - эмпатия, поддержка, понимание эмоций
-2. HR-СПЕЦИАЛИСТ - анализ личности, карьерные рекомендации  
+1. ПСИХОЛОГ-КОНСУЛЬТАНТ - эмпатия, поддержка, понимание эмоций, психологическая помощь
+2. HR-СПЕЦИАЛИСТ - анализ личности, карьерные рекомендации, профессиональное развитие
 3. КОНСУЛЬТАНТ - помощь с выбором профессии и развитием
 
 ПРИНЦИПЫ:
@@ -757,6 +823,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 - Поддерживай эмоционально
 - Мягко подводи к самоанализу
 - Если пользователь ссылается на предыдущее - обратись к контексту
+- Фокусируйся на своем сценарии: психология ИЛИ карьера
 
 ФОРМАТ: Эмпатичный ответ (1-2 предложения) + релевантный вопрос.
 
