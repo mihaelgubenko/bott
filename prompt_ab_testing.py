@@ -357,11 +357,13 @@ class PromptABTesting:
             JOIN prompt_variants p ON r.prompt_variant_id = p.id
         '''
         
+        # Безопасное формирование запроса
         if prompt_type:
-            cursor.execute(base_query + ' WHERE r.prompt_type = ? GROUP BY r.prompt_variant_id', 
-                         (prompt_type.value,))
+            full_query = base_query + ' WHERE r.prompt_type = ? GROUP BY r.prompt_variant_id'
+            cursor.execute(full_query, (prompt_type.value,))
         else:
-            cursor.execute(base_query + ' GROUP BY r.prompt_variant_id')
+            full_query = base_query + ' GROUP BY r.prompt_variant_id'
+            cursor.execute(full_query)
         
         results = cursor.fetchall()
         
