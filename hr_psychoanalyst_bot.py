@@ -21,6 +21,7 @@ import openai
 # Новые модули для ИИ-улучшений
 from sentiment_analyzer import get_sentiment_analyzer
 from prompt_ab_testing import get_ab_testing_manager, PromptType
+from token_monitor import get_token_monitor
 
 # ENV
 load_dotenv()
@@ -49,6 +50,7 @@ conversation_history = {}
 # ИИ модули
 sentiment_analyzer = get_sentiment_analyzer()
 ab_testing_manager = get_ab_testing_manager()
+token_monitor = get_token_monitor()
 
 # Professional 7 questions for full analysis
 PROFESSIONAL_QUESTIONS = [
@@ -97,6 +99,62 @@ def get_user_analyses(telegram_id: int):
     analyses = cursor.fetchall()
     conn.close()
     return analyses
+
+# Smart context management
+def smart_context_reduction(conversation_history: list, max_tokens: int = 2000) -> str:
+    """Умное сокращение контекста для предотвращения переполнения токенов"""
+    if not conversation_history:
+        return ""
+    
+    # Если контекст короткий, возвращаем как есть
+    full_context = " ".join(conversation_history)
+    if len(full_context) < max_tokens:
+        return full_context
+    
+    # Берем последние сообщения, но не более 5
+    recent_messages = conversation_history[-5:] if len(conversation_history) > 5 else conversation_history
+    
+    # Если все еще слишком длинно, сокращаем каждое сообщение
+    shortened_context = []
+    for msg in recent_messages:
+        if len(msg) > 200:  # Сокращаем длинные сообщения
+            shortened_msg = msg[:200] + "..."
+        else:
+            shortened_msg = msg
+        shortened_context.append(shortened_msg)
+    
+    return " ".join(shortened_context)
+
+# Smart response splitting
+async def send_long_response(update: Update, response: str, max_length: int = 4000):
+    """Умная отправка длинных ответов с разбивкой на части"""
+    if len(response) <= max_length:
+        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        return
+    
+    # Разбиваем на части по предложениям
+    sentences = response.split('. ')
+    parts = []
+    current_part = ""
+    
+    for sentence in sentences:
+        if len(current_part + sentence + '. ') <= max_length:
+            current_part += sentence + '. '
+        else:
+            if current_part:
+                parts.append(current_part.strip())
+            current_part = sentence + '. '
+    
+    if current_part:
+        parts.append(current_part.strip())
+    
+    # Отправляем части
+    for i, part in enumerate(parts):
+        if i == 0:
+            await update.message.reply_text(part, parse_mode=ParseMode.MARKDOWN)
+        else:
+            prefix = f"**Продолжение (часть {i+1}):**\n\n" if len(parts) > 1 else ""
+            await update.message.reply_text(prefix + part, parse_mode=ParseMode.MARKDOWN)
 
 # Language detection
 def detect_language(text: str) -> str:
@@ -201,6 +259,8 @@ def get_express_analysis_prompt(conversation: str, message_count: int, user_id: 
 ⚠️ Зоны развития: [что стоит развивать]
 
 СТИЛЬ: Профессиональный, эмпатичный, конкретный. Максимум 300 слов.
+
+ВАЖНО: Обязательно заверши ответ полностью. Не обрывай на середине предложения.
 """
         variant_id = "default"
     
@@ -254,6 +314,8 @@ def get_full_analysis_prompt(answers: list) -> str:
 - Рекомендации по саморазвитию
 
 СТИЛЬ: Профессиональный, детальный, практичный. 800-1200 слов.
+
+ВАЖНО: Обязательно заверши анализ полностью. Не обрывай на середине раздела.
 """
 
 def get_psychology_consultation_prompt(user_message: str, user_id: int, conversation_history: list = None) -> Tuple[str, str]:
@@ -292,15 +354,18 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
 💡 Мягкие рекомендации (если уместно)
 
 СТИЛЬ: Теплый, понимающий, как разговор с близким другом, который помнит всё. 150-300 слов.
+
+ВАЖНО: Обязательно заверши ответ полностью. Не обрывай на середине предложения.
 """
         variant_id = "default"
     
-    # Подготавливаем контекст разговора
+    # Подготавливаем контекст разговора с умным сокращением
     conversation_context = ""
     if conversation_history and len(conversation_history) > 1:
-        # Берем последние 10 сообщений для контекста
-        recent_messages = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history[:-1]  # исключаем текущее сообщение
-        conversation_context = "Предыдущие сообщения:\n" + "\n".join([f"- {msg}" for msg in recent_messages])
+        # Используем умное сокращение контекста
+        recent_messages = conversation_history[:-1]  # исключаем текущее сообщение
+        smart_context = smart_context_reduction(recent_messages, max_tokens=1500)
+        conversation_context = f"Предыдущие сообщения:\n{smart_context}"
     else:
         conversation_context = "Это первое сообщение в разговоре."
     
@@ -325,10 +390,21 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
     
     return prompt, variant_id
 
-# OpenAI client
-async def get_ai_response(prompt: str, max_tokens: int = 1000) -> str:
+# OpenAI client with smart token management
+async def get_ai_response(prompt: str, max_tokens: int = 1000, ensure_completion: bool = True, user_id: int = None, prompt_type: str = "general") -> str:
     try:
+        # Проверяем размер промпта
+        is_safe, estimated_tokens = token_monitor.check_prompt_size(prompt)
+        if not is_safe:
+            logger.warning(f"Prompt too large: {estimated_tokens} tokens, optimizing...")
+            prompt = token_monitor.optimize_prompt(prompt)
+        
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        
+        # Если нужно гарантировать завершение ответа, увеличиваем лимит
+        if ensure_completion and max_tokens < 800:
+            max_tokens = min(max_tokens * 2, 2000)  # Увеличиваем, но не более 2000
+        
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
@@ -336,7 +412,25 @@ async def get_ai_response(prompt: str, max_tokens: int = 1000) -> str:
             temperature=0.7,
             timeout=60,
         )
-        return response.choices[0].message.content.strip()
+        
+        result = response.choices[0].message.content.strip()
+        
+        # Логируем использование токенов
+        if user_id:
+            usage = token_monitor.calculate_usage(prompt, result)
+            token_monitor.log_usage(usage, user_id, prompt_type)
+        
+        # Проверяем, не обрезался ли ответ
+        if ensure_completion and len(result) > 0:
+            # Если ответ заканчивается на середине предложения, пытаемся дополнить
+            if not result.endswith(('.', '!', '?', '💙', '🤗', '💡', '🎯', '🧠', '💼', '🎓', '⚠️')):
+                logger.warning(f"Response might be truncated: {result[-50:]}")
+                # Добавляем завершающую фразу
+                if not result.endswith('...'):
+                    result += "..."
+        
+        return result
+        
     except Exception as e:
         logger.error(f"OpenAI error: {e}")
         return "Извините, произошла ошибка при обработке запроса. Попробуйте позже."
@@ -523,9 +617,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     conversation_history[user.id].append(text)
     
-    # Keep only last 15 messages
-    if len(conversation_history[user.id]) > 15:
-        conversation_history[user.id] = conversation_history[user.id][-15:]
+    # Keep only last 10 messages to prevent token overflow
+    if len(conversation_history[user.id]) > 10:
+        conversation_history[user.id] = conversation_history[user.id][-10:]
     
     # Handle cancellation
     if patterns['cancellation']:
@@ -574,7 +668,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         # Используем полный контекст для понимания ссылки
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, max_tokens=500, ensure_completion=True, user_id=user.id, prompt_type="psychology_consultation")
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(text, response)
@@ -586,7 +680,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         
         await thinking_msg.delete()
-        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        await send_long_response(update, response)
         return WAITING_MESSAGE
     
     # Check for full analysis request
@@ -623,7 +717,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, max_tokens=500, ensure_completion=True, user_id=user.id, prompt_type="psychology_consultation")
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(text, response)
@@ -635,7 +729,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         
         await thinking_msg.delete()
-        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        await send_long_response(update, response)
         return WAITING_MESSAGE
     
     # Check message count for express analysis
@@ -650,7 +744,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         conversation_text = " ".join(conversation_history[user.id])
         prompt, variant_id = get_express_analysis_prompt(conversation_text, message_count, user.id)
-        response = await get_ai_response(prompt, max_tokens=400)
+        response = await get_ai_response(prompt, max_tokens=800, ensure_completion=True, user_id=user.id, prompt_type="express_analysis")
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(conversation_text, response)
@@ -722,13 +816,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         primary_role = "КОНСУЛЬТАНТ"
         focus = "общее развитие и самоанализ"
     
-    # Подготавливаем контекст предыдущих сообщений
+    # Подготавливаем контекст предыдущих сообщений с умным сокращением
     previous_context = ""
     if len(conversation_history[user.id]) > 1:
         recent_messages = conversation_history[user.id][:-1]  # все кроме текущего
-        if len(recent_messages) > 8:
-            recent_messages = recent_messages[-8:]  # последние 8 сообщений
-        previous_context = "Предыдущие сообщения в разговоре:\n" + "\n".join([f"- {msg}" for msg in recent_messages])
+        smart_context = smart_context_reduction(recent_messages, max_tokens=1000)
+        previous_context = f"Предыдущие сообщения в разговоре:\n{smart_context}"
     
     prompt = f"""
 Ты — HR-психоаналитик и карьерный консультант. 
@@ -763,7 +856,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 СТИЛЬ: Теплый, профессиональный, адаптивный к ситуации, помнящий контекст.
 """
     
-    response = await get_ai_response(prompt, max_tokens=200)
+    response = await get_ai_response(prompt, max_tokens=400, ensure_completion=True, user_id=user.id, prompt_type="general_conversation")
     await thinking_msg.delete()
     await update.message.reply_text(response)
     return WAITING_MESSAGE
@@ -807,19 +900,12 @@ async def handle_full_analysis_answer(update: Update, context: ContextTypes.DEFA
         )
         
         prompt = get_full_analysis_prompt(answers)
-        response = await get_ai_response(prompt, max_tokens=1500)
+        response = await get_ai_response(prompt, max_tokens=2500, ensure_completion=True, user_id=user.id, prompt_type="full_analysis")
         
         await thinking_msg.delete()  # Удаляем сообщение "Провожу анализ..."
         
-        # Split long response
-        max_length = 4000
-        if len(response) <= max_length:
-            await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
-        else:
-            parts = [response[i:i+max_length] for i in range(0, len(response), max_length)]
-            for i, part in enumerate(parts):
-                prefix = f"**Анализ (часть {i+1}):**\n\n" if i > 0 else ""
-                await update.message.reply_text(prefix + part, parse_mode=ParseMode.MARKDOWN)
+        # Use smart response splitting
+        await send_long_response(update, response)
         
         # Save full analysis
         analysis_data = {
