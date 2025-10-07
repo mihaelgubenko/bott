@@ -21,6 +21,13 @@ import openai
 # Новые модули для ИИ-улучшений
 from sentiment_analyzer import get_sentiment_analyzer
 from prompt_ab_testing import get_ab_testing_manager, PromptType
+from consultation_manager import (
+    get_consultation_manager,
+    ConsultationType,
+    SessionTier,
+    DialogState,
+    CONSULTATION_LIMITS
+)
 
 # ENV
 load_dotenv()
@@ -49,6 +56,7 @@ conversation_history = {}
 # ИИ модули
 sentiment_analyzer = get_sentiment_analyzer()
 ab_testing_manager = get_ab_testing_manager()
+consultation_manager = get_consultation_manager()
 
 # Professional 7 questions for full analysis
 PROFESSIONAL_QUESTIONS = [
@@ -326,7 +334,14 @@ def get_psychology_consultation_prompt(user_message: str, user_id: int, conversa
     return prompt, variant_id
 
 # OpenAI client
-async def get_ai_response(prompt: str, max_tokens: int = 1000) -> str:
+async def get_ai_response(prompt: str, max_tokens: int = 2000) -> str:
+    """
+    Получить ответ от OpenAI GPT-4
+    
+    Args:
+        prompt: Промпт для ИИ
+        max_tokens: Максимальное количество токенов (по умолчанию 2000, было 1000)
+    """
     try:
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
         response = client.chat.completions.create(
@@ -348,6 +363,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Clear previous data
     user_data.pop(user.id, None)
     conversation_history.pop(user.id, None)
+    
+    # Очистка контекста консультаций
+    consultation_manager.clear_dialog_context(user.id)
     
     welcome_text = """
 🤗 **HR-Психоаналитик | Карьерный консультант**
@@ -459,6 +477,115 @@ async def reset_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Все ваши данные очищены. Начните заново с /start"
     )
 
+async def handle_tier_selection(update: Update, user_id: int, text: str, 
+                                consultation_type: ConsultationType) -> bool:
+    """
+    Обработать выбор тарифа консультации
+    
+    Returns:
+        True если тариф выбран, False если нет
+    """
+    text_lower = text.lower()
+    
+    # Определяем выбранный тариф
+    selected_tier = None
+    
+    if any(word in text_lower for word in ['1', 'экспресс', 'бесплатно', 'free']):
+        selected_tier = SessionTier.FREE
+    elif any(word in text_lower for word in ['2', 'расширенная', 'стандарт', 'standard']):
+        selected_tier = SessionTier.STANDARD
+    elif any(word in text_lower for word in ['3', 'профессиональная', 'премиум', 'premium']):
+        selected_tier = SessionTier.PREMIUM
+    
+    if selected_tier:
+        # Создаем сессию
+        session = consultation_manager.create_session(
+            user_id=user_id,
+            consultation_type=consultation_type,
+            tier=selected_tier,
+            topic=text[:100]  # Первые 100 символов как тема
+        )
+        
+        limits = CONSULTATION_LIMITS[selected_tier]
+        
+        # Сообщение о начале консультации
+        message = f"✅ **{limits['name']}**\n\n"
+        
+        if selected_tier == SessionTier.FREE:
+            message += "Отлично! Начинаем консультацию.\n\n"
+        else:
+            message += f"💳 Стоимость: {limits['price']}₽\n"
+            message += "⚠️ *В демо-режиме оплата не требуется*\n\n"
+        
+        message += f"⏱️ У вас: {limits['duration_minutes']} минут, до {limits['max_messages']} сообщений\n\n"
+        message += "Давайте начнем! Расскажите подробнее о вашей ситуации."
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        return True
+    
+    return False
+
+
+async def check_and_handle_session_limits(update: Update, session) -> bool:
+    """
+    Проверить лимиты сессии и отправить предупреждение/завершение
+    
+    Returns:
+        True если сессия продолжается, False если закончилась
+    """
+    limits_info = consultation_manager.check_session_limits(session)
+    
+    # Если нужно завершить
+    if limits_info['should_end']:
+        consultation_manager.end_session(session, reason="limits_reached")
+        
+        tier_name = CONSULTATION_LIMITS[session.tier]['name']
+        limiting = limits_info['limiting_factor']
+        
+        message = f"⏰ **{tier_name} завершена**\n\n"
+        message += f"Причина: {'исчерпано время' if limiting == 'time' else 'достигнут лимит сообщений' if limiting == 'messages' else 'использованы токены'}\n\n"
+        message += "📊 **Результаты сессии:**\n"
+        message += f"• Обработано сообщений: {session.messages_used}\n"
+        message += f"• Время: {int((datetime.now() - session.start_time).total_seconds() / 60)} минут\n\n"
+        
+        # Предлагаем продолжить
+        if session.tier == SessionTier.FREE:
+            message += "💡 **Хотите продолжить?**\n\n"
+            message += "💎 **Расширенная консультация** (45 мин) - 500₽\n"
+            message += "💼 **Профессиональная сессия** (90 мин) - 1000₽\n\n"
+            message += "Для продолжения напишите '2' или '3', или начните новую сессию командой /start"
+        elif session.tier == SessionTier.STANDARD:
+            message += "💡 **Хотите продолжить?**\n\n"
+            message += "💼 **Профессиональная сессия** (90 мин) - +500₽\n\n"
+            message += "Напишите '3' для перехода или начните новую сессию командой /start"
+        else:
+            message += "Спасибо за доверие! Для новой консультации используйте /start"
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+        return False
+    
+    # Если нужно предупредить
+    if limits_info['should_warn']:
+        consultation_manager.mark_warning_sent(session)
+        
+        tier_name = CONSULTATION_LIMITS[session.tier]['name']
+        
+        message = f"⏰ **{tier_name}**\n\n"
+        message += "У вас осталось:\n"
+        message += f"• Сообщений: {limits_info['messages_remaining']}\n"
+        message += f"• Времени: ~{int(limits_info['time_remaining'])} мин\n\n"
+        
+        if session.tier == SessionTier.FREE:
+            message += "💡 Хотите продолжить после лимита?\n\n"
+            message += "💎 Расширенная (45 мин) - 500₽\n"
+            message += "💼 Профессиональная (90 мин) - 1000₽\n\n"
+            message += "Или продолжим в текущем формате."
+        
+        await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN)
+    
+    return True
+
+
 async def show_ab_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показать статистику A/B тестирования (только для админов)"""
     user = update.effective_user
@@ -514,6 +641,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Я работаю только на русском языке. Пожалуйста, напишите на русском.")
         return WAITING_MESSAGE
     
+    # Получаем контекст диалога
+    dialog_context = consultation_manager.get_dialog_context(user.id)
+    current_state = dialog_context.current_state
+    
+    # Проверяем активную сессию
+    active_session = consultation_manager.get_active_session(user.id)
+    
     # Analyze speech patterns
     patterns = analyze_speech_patterns(text)
     
@@ -526,6 +660,102 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Keep only last 15 messages
     if len(conversation_history[user.id]) > 15:
         conversation_history[user.id] = conversation_history[user.id][-15:]
+    
+    # ========================================================================
+    # ОБРАБОТКА ВЫБОРА ТАРИФА КОНСУЛЬТАЦИИ
+    # ========================================================================
+    
+    # Проверяем, хочет ли пользователь начать консультацию
+    wants_consultation = any(word in text.lower() for word in ['да', 'хочу', 'давайте', 'начнем', 'согласен', 'конечно'])
+    
+    if wants_consultation and len(conversation_history.get(user.id, [])) <= 3 and not active_session:
+        # Пользователь хочет консультацию, определяем тип
+        consultation_type, confidence = consultation_manager.detect_consultation_type(
+            text, 
+            conversation_history.get(user.id, [])
+        )
+        
+        if confidence < 0.5:
+            # Если не можем определить тип, используем общую консультацию
+            consultation_type = ConsultationType.GENERAL
+        
+        # Показываем выбор тарифа
+        tier_message = consultation_manager.get_tier_selection_message(consultation_type)
+        dialog_context.pending_consultation_type = consultation_type
+        dialog_context.current_state = DialogState.CHOOSING_TIER
+        
+        await update.message.reply_text(tier_message, parse_mode=ParseMode.MARKDOWN)
+        return WAITING_MESSAGE
+    
+    if current_state == DialogState.CHOOSING_TIER and dialog_context.pending_consultation_type:
+        tier_selected = await handle_tier_selection(
+            update, user.id, text, dialog_context.pending_consultation_type
+        )
+        if tier_selected:
+            dialog_context.pending_consultation_type = None
+            return WAITING_MESSAGE
+        # Если тариф не выбран, продолжаем обработку сообщения
+    
+    # ========================================================================
+    # РАБОТА С АКТИВНОЙ СЕССИЕЙ КОНСУЛЬТАЦИИ
+    # ========================================================================
+    if active_session and active_session.is_active:
+        # Проверяем лимиты сессии
+        session_continues = await check_and_handle_session_limits(update, active_session)
+        
+        if not session_continues:
+            # Сессия завершена, ждем выбора нового тарифа
+            dialog_context.current_state = DialogState.CHOOSING_TIER
+            return WAITING_MESSAGE
+        
+        # Обновляем использование сессии
+        consultation_manager.update_session_usage(active_session, messages_delta=1)
+        
+        # Получаем адаптивный лимит токенов
+        adaptive_max_tokens = consultation_manager.get_adaptive_max_tokens(
+            active_session, 
+            message_length=len(text)
+        )
+        
+        # Обрабатываем сообщение в контексте консультации
+        thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
+        
+        prompt, variant_id = get_psychology_consultation_prompt(
+            text, user.id, conversation_history.get(user.id, [])
+        )
+        
+        response = await get_ai_response(prompt, max_tokens=adaptive_max_tokens)
+        
+        # Подсчитываем использованные токены (приблизительно)
+        estimated_tokens = len(response.split()) * 1.3  # Примерная оценка
+        consultation_manager.update_session_usage(
+            active_session, 
+            tokens_delta=int(estimated_tokens)
+        )
+        
+        # Записываем результат A/B теста
+        quality_score = ab_testing_manager.evaluate_response_quality(text, response)
+        ab_testing_manager.record_test_result(
+            user_id=user.id,
+            prompt_variant_id=variant_id,
+            prompt_type=PromptType.PSYCHOLOGY_CONSULTATION,
+            response_quality=quality_score
+        )
+        
+        await thinking_msg.delete()
+        
+        # Добавляем статус-бар если близко к лимиту
+        limits_info = consultation_manager.check_session_limits(active_session)
+        if limits_info['messages_remaining'] <= 3:
+            status_bar = consultation_manager.get_session_status_bar(active_session)
+            response = response + "\n\n" + status_bar
+        
+        await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        return WAITING_MESSAGE
+    
+    # ========================================================================
+    # ДАЛЕЕ ИДЕТ СТАНДАРТНАЯ ЛОГИКА (БЕЗ АКТИВНОЙ СЕССИИ)
+    # ========================================================================
     
     # Handle cancellation
     if patterns['cancellation']:
@@ -574,7 +804,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         # Используем полный контекст для понимания ссылки
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, max_tokens=600)  # Увеличено с 300 до 600
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(text, response)
@@ -620,10 +850,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Handle psychology-related questions
     if patterns['psychology_need'] or patterns['emotional_support']:
+        # Определяем тип консультации
+        consultation_type, confidence = consultation_manager.detect_consultation_type(
+            text, 
+            conversation_history.get(user.id, [])
+        )
+        
+        # Если уверенность высокая (>0.7), предлагаем создать сессию
+        if confidence > 0.7 and len(conversation_history.get(user.id, [])) <= 2:
+            # Это начало консультации, предлагаем выбрать тариф
+            tier_message = consultation_manager.get_tier_selection_message(consultation_type)
+            
+            # Сохраняем тип консультации в контексте
+            dialog_context.pending_consultation_type = consultation_type
+            dialog_context.current_state = DialogState.CHOOSING_TIER
+            
+            await update.message.reply_text(tier_message, parse_mode=ParseMode.MARKDOWN)
+            return WAITING_MESSAGE
+        
+        # Иначе просто отвечаем (короткая консультация без сессии)
         thinking_msg = await update.message.reply_text("🤔 Анализирую вашу ситуацию...")
         
         prompt, variant_id = get_psychology_consultation_prompt(text, user.id, conversation_history.get(user.id, []))
-        response = await get_ai_response(prompt, max_tokens=300)
+        response = await get_ai_response(prompt, max_tokens=600)  # Увеличено с 300 до 600
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(text, response)
@@ -636,6 +885,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         await thinking_msg.delete()
         await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+        
+        # После ответа предлагаем создать сессию для продолжения
+        if len(conversation_history.get(user.id, [])) == 2:
+            follow_up = "\n\n💡 Хотите провести полноценную консультацию? "
+            follow_up += "Напишите 'да' и я предложу варианты."
+            await update.message.reply_text(follow_up)
+        
         return WAITING_MESSAGE
     
     # Check message count for express analysis
@@ -650,7 +906,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         conversation_text = " ".join(conversation_history[user.id])
         prompt, variant_id = get_express_analysis_prompt(conversation_text, message_count, user.id)
-        response = await get_ai_response(prompt, max_tokens=400)
+        response = await get_ai_response(prompt, max_tokens=700)  # Увеличено с 400 до 700
         
         # Записываем результат A/B теста
         quality_score = ab_testing_manager.evaluate_response_quality(conversation_text, response)
@@ -763,7 +1019,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 СТИЛЬ: Теплый, профессиональный, адаптивный к ситуации, помнящий контекст.
 """
     
-    response = await get_ai_response(prompt, max_tokens=200)
+    response = await get_ai_response(prompt, max_tokens=500)  # Увеличено с 200 до 500
     await thinking_msg.delete()
     await update.message.reply_text(response)
     return WAITING_MESSAGE
