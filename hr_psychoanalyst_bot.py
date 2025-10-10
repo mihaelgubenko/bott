@@ -17,6 +17,14 @@ from telegram.ext import (
 )
 import openai
 
+# Self-esteem module
+from self_esteem_module import (
+    SELF_ESTEEM_QUESTIONS,
+    analyze_self_esteem,
+    generate_report,
+    get_question_block_name
+)
+
 # ENV
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -35,7 +43,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # States
-(WAITING_MESSAGE, IN_EXPRESS_ANALYSIS, IN_FULL_ANALYSIS, Q1, Q2, Q3, Q4, Q5, Q6, Q7) = range(10)
+(WAITING_MESSAGE, IN_EXPRESS_ANALYSIS, IN_FULL_ANALYSIS, Q1, Q2, Q3, Q4, Q5, Q6, Q7, SELF_ESTEEM_START) = range(11)
+
+# Self-esteem states (30 questions)
+SELF_ESTEEM_Q = list(range(100, 130))  # Q100-Q129 for 30 questions
 
 # Storage
 user_data = {}
@@ -300,6 +311,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 • После 10 сообщений проведу экспресс-анализ (бесплатно)
 • Для детального психоанализа скажите 'полный анализ'
 
+**📖 НОВИНКА: Тест "Восхождение"**
+Пройдите тест самооценки (30 вопросов) на основе книги "Восхождение"!
+Скажите: "тест самооценки" или /self_esteem
+
 **Конфиденциально и анонимно** 💙
 """
     
@@ -314,6 +329,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 • Психологическая поддержка и консультация
 • Экспресс-анализ личности (после 10 сообщений)
 • Помощь с выбором профессии
+• 📖 **Тест "Восхождение"** (30 вопросов о самооценке)
 
 **Платно (500₽):**
 • Полный психоанализ (7 глубоких вопросов)
@@ -323,6 +339,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 **Команды:**
 /start - начать общение
 /help - эта справка
+/self_esteem - тест самооценки (30 вопросов)
+/consultation - информация о консультациях
 /cancel - отменить текущий процесс
 
 **Все конфиденциально и анонимно!** 💙
@@ -382,6 +400,163 @@ async def reset_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "🔄 Бот сброшен!\n\n"
         "Все ваши данные очищены. Начните заново с /start"
     )
+
+async def start_self_esteem_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Начать тест самооценки (30 вопросов)"""
+    user = update.effective_user
+    
+    # Инициализация данных пользователя
+    user_data[user.id] = {
+        'test_type': 'self_esteem',
+        'answers': [],
+        'current_question': 0
+    }
+    
+    intro_text = """
+📖 **ТЕСТ САМООЦЕНКИ | "Восхождение"**
+
+Этот тест основан на моей авторской книге "Восхождение" и поможет вам:
+
+✨ Понять уровень вашей самооценки
+🎯 Найти свое предназначение
+😌 Освободиться от страхов, гнева и обид
+💝 Улучшить отношения с собой и другими
+
+**Формат:** 30 вопросов, разделенных на 5 блоков
+**Время:** ~15-20 минут
+**Результат:** Детальный анализ + персональные рекомендации
+
+Отвечайте искренне - это ключ к трансформации!
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+{}
+
+**Вопрос 1 из 30:**
+{}
+""".format(
+        get_question_block_name(1),
+        SELF_ESTEEM_QUESTIONS[0]
+    )
+    
+    await update.message.reply_text(intro_text, parse_mode=ParseMode.MARKDOWN)
+    return SELF_ESTEEM_Q[0]
+
+async def handle_self_esteem_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработка ответов на вопросы теста самооценки"""
+    user = update.effective_user
+    text = update.message.text.strip()
+    
+    if not text or len(text) < 3:
+        await update.message.reply_text(
+            "Пожалуйста, дайте более развернутый ответ (минимум 3 символа)."
+        )
+        # Возвращаем текущий вопрос
+        current_q = user_data[user.id]['current_question']
+        return SELF_ESTEEM_Q[current_q]
+    
+    # Сохраняем ответ
+    user_data[user.id]['answers'].append(text)
+    user_data[user.id]['current_question'] += 1
+    
+    current_q = user_data[user.id]['current_question']
+    
+    # Проверяем, закончились ли вопросы
+    if current_q >= 30:
+        # Все вопросы завершены - проводим анализ
+        await update.message.reply_text(
+            "✅ Отлично! Все ответы получены.\n\n"
+            "🔮 Провожу глубокий анализ вашей самооценки...\n"
+            "Это займет несколько минут."
+        )
+        
+        # Анализ
+        answers = user_data[user.id]['answers']
+        scores = analyze_self_esteem(answers)
+        report = generate_report(scores, user.first_name or "Друг")
+        
+        # Разбиваем длинный отчет на части
+        max_length = 4000
+        if len(report) <= max_length:
+            await update.message.reply_text(report, parse_mode=ParseMode.MARKDOWN)
+        else:
+            parts = [report[i:i+max_length] for i in range(0, len(report), max_length)]
+            for i, part in enumerate(parts):
+                prefix = f"**Отчет (часть {i+1}/{len(parts)}):**\n\n" if i > 0 else ""
+                await update.message.reply_text(prefix + part, parse_mode=ParseMode.MARKDOWN)
+        
+        # Сохраняем результаты
+        analysis_data = {
+            'type': 'self_esteem',
+            'answers': answers,
+            'scores': scores,
+            'report': report
+        }
+        save_analysis(user.id, user.first_name or f"User_{user.id}", 'self_esteem', analysis_data, 'free')
+        
+        # Очищаем данные
+        user_data.pop(user.id, None)
+        return ConversationHandler.END
+    
+    # Следующий вопрос
+    block_change = ""
+    if current_q in [6, 12, 18, 24]:
+        block_change = f"\n\n{get_question_block_name(current_q + 1)}\n"
+    
+    next_question = f"{block_change}\n**Вопрос {current_q + 1} из 30:**\n{SELF_ESTEEM_QUESTIONS[current_q]}"
+    await update.message.reply_text(next_question, parse_mode=ParseMode.MARKDOWN)
+    
+    return SELF_ESTEEM_Q[current_q]
+
+async def consultation_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Информация о личной консультации"""
+    consultation_text = """
+💫 **ЛИЧНАЯ КОНСУЛЬТАЦИЯ**
+
+Я помогу вам пройти путь трансформации и раскрыть ваш истинный потенциал.
+
+**Что я предлагаю:**
+
+✨ **Повышение самооценки**
+• Избавление от самокритики и сомнений
+• Обретение уверенности в себе
+• Принятие и любовь к себе
+
+🎯 **Поиск предназначения**
+• Обнаружение вашего уникального дара
+• Определение жизненной миссии
+• Построение карьеры по призванию
+
+😌 **Освобождение от негатива**
+• Проработка страхов и тревог
+• Трансформация гнева в силу
+• Освобождение от обид прошлого
+
+💝 **Гармонизация отношений**
+• Улучшение отношений с близкими
+• Установление здоровых границ
+• Привлечение качественных отношений
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+**Формат работы:**
+• Индивидуальные сессии 1-2 часа
+• Онлайн/оффлайн (на ваш выбор)
+• Персональная программа развития
+• Поддержка между сессиями
+
+**Стоимость:** обсуждается индивидуально
+
+📞 **Записаться:**
+Напишите мне: [Ваш Telegram/Email/Телефон]
+
+Или просто напишите "Хочу консультацию" здесь!
+
+━━━━━━━━━━━━━━━━━━━━━━
+💙 Ваша трансформация начинается с первого шага!
+"""
+    
+    await update.message.reply_text(consultation_text, parse_mode=ParseMode.MARKDOWN)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
@@ -462,6 +637,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "Если что-то не так в моих ответах, дайте знать - я постараюсь лучше понять вас. "
                 "Что именно вас беспокоит? 💙"
             )
+        return WAITING_MESSAGE
+    
+    # Check for self-esteem test request
+    if 'тест самооценки' in text.lower() or 'восхождение' in text.lower() or 'самооценка' in text.lower():
+        return await start_self_esteem_test(update, context)
+    
+    # Check for consultation request
+    if 'хочу консультацию' in text.lower() or 'личная консультация' in text.lower() or 'запись' in text.lower():
+        await consultation_info(update, context)
         return WAITING_MESSAGE
     
     # Check for full analysis request
@@ -690,7 +874,10 @@ def main():
     
     # Conversation handler
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[
+            CommandHandler('start', start),
+            CommandHandler('self_esteem', start_self_esteem_test)
+        ],
         states={
             WAITING_MESSAGE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
@@ -702,6 +889,7 @@ def main():
             Q5: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_full_analysis_answer)],
             Q6: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_full_analysis_answer)],
             Q7: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_full_analysis_answer)],
+            **{state: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_self_esteem_answer)] for state in SELF_ESTEEM_Q}
         },
         fallbacks=[CommandHandler('cancel', cancel)],
         allow_reentry=True,
@@ -710,6 +898,7 @@ def main():
     # Add handlers
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler('consultation', consultation_info))
     application.add_handler(CommandHandler('clear', clear_memory))
     application.add_handler(CommandHandler('reset', reset_bot))
     
