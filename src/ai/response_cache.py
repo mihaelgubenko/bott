@@ -5,7 +5,7 @@
 import time
 import hashlib
 import logging
-from typing import Dict, Optional, Any, Tuple
+from typing import Dict, Optional, Any, Tuple, List
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from collections import OrderedDict

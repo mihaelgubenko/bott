@@ -3,6 +3,7 @@
 """
 
 import openai
+import time
 import logging
 from typing import Dict, Optional, Tuple, Any
 from dataclasses import dataclass

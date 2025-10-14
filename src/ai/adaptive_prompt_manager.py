@@ -195,7 +195,7 @@ class AdaptivePromptManager:
 СООБЩЕНИЕ КЛИЕНТА:
 {user_message}
 
-КОНТЕКСТ: {context_summary}
+КОНТЕКСТ: {conversation}
 
 ТВОЯ РОЛЬ: Эксперт по карьере и развитию.
 

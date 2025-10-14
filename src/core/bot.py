@@ -5,7 +5,7 @@
 import logging
 from typing import Dict, Any, Optional
 from telegram import Update
-from telegram.ext import Application, ContextTypes
+from telegram.ext import Application, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler as TGMessageHandler, ConversationHandler, filters
 
 from .config import Config
 from .database import DatabaseManager

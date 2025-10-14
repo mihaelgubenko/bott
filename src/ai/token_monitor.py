@@ -28,6 +28,7 @@ class UserPatterns:
     preferred_prompt_length: str = "medium"
     preferred_style: str = "balanced"
     avg_conversation_length: int = 0
+    avg_response_length: float = 0.0
     truncation_rate: float = 0.0
     satisfaction_score: float = 0.0
     last_optimization: datetime = field(default_factory=datetime.now)
