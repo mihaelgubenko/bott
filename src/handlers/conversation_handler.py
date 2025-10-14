@@ -53,6 +53,20 @@ class ConversationHandler:
         if patterns['self_introduction_request']:
             return await self._handle_self_introduction(update, context)
         
+        # ПРИОРИТЕТ: Если пользователь задает прямой вопрос - отвечаем сразу
+        if self._is_direct_question(text):
+            response_type = self._determine_response_type(patterns, text)
+            try:
+                response = await self._get_ai_response(user.id, text, response_type)
+                await self._send_response(update, response)
+                return 'WAITING_MESSAGE'
+            except Exception as e:
+                logger.error(f"Ошибка получения ответа ИИ: {e}")
+                await update.message.reply_text(
+                    "Извините, произошла ошибка при обработке запроса. Попробуйте позже."
+                )
+                return 'WAITING_MESSAGE'
+        
         # Определяем тип ответа
         response_type = self._determine_response_type(patterns, text)
         
@@ -73,6 +87,41 @@ class ConversationHandler:
             )
         
         return 'WAITING_MESSAGE'
+    
+    def _is_direct_question(self, text: str) -> bool:
+        """Определение прямых вопросов, требующих немедленного ответа"""
+        text_lower = text.lower()
+        
+        # Ключевые слова для прямых вопросов
+        direct_question_indicators = [
+            'что из себя представляет',
+            'что входит в',
+            'какие курсы',
+            'расскажи о',
+            'объясни',
+            'что такое',
+            'как работает',
+            'в чем разница',
+            'как выбрать',
+            'где найти',
+            'сколько стоит',
+            'как начать',
+            'с чего начать',
+            'что нужно знать',
+            'какие навыки',
+            'какие требования'
+        ]
+        
+        # Проверяем наличие прямых вопросов
+        for indicator in direct_question_indicators:
+            if indicator in text_lower:
+                return True
+        
+        # Проверяем вопросительные знаки в конце
+        if text.strip().endswith('?'):
+            return True
+        
+        return False
     
     def _analyze_speech_patterns(self, text: str) -> Dict[str, bool]:
         """Анализ паттернов речи"""
